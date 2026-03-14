@@ -1,0 +1,42 @@
+[site]
+name   = "Log Viewer Demo"
+domain = "localhost"
+
+[log]
+level  = "info"
+format = "text"
+
+[errors]
+mode = "internal"
+
+[[backend]]
+name    = "m6-html"
+sockets = "/tmp/m6/m6-html*.sock"
+
+[[backend]]
+name    = "m6-file"
+sockets = "/tmp/m6/m6-file*.sock"
+
+# ── Static pages and log viewer UI (served by m6-html) ─────────
+
+[[route]]
+path    = "/"
+backend = "m6-html"
+
+[[route]]
+path    = "/logs"
+backend = "m6-html"
+
+[[route_group]]
+glob    = "assets/**/*"
+path    = "/assets/{relpath}"
+backend = "m6-file"
+
+# ── Log file tailing — no-store, served by m6-file tail mode ───
+# Browser JS polls GET /logs/tail/<name>.log?offset=N
+# m6-file returns bytes from that offset with X-Log-End header.
+
+[[route_group]]
+glob    = "logs/*.log"
+path    = "/logs/tail/{relpath}"
+backend = "m6-file"

@@ -1,0 +1,10 @@
+{% extends "templates/base.html" %}
+{% set post = documents | filter(attribute="stem", value=stem) | first %}
+{% block title %}{{ post.title }} · {{ site_name }}{% endblock %}
+{% block content %}
+  <article>
+    <h1>{{ post.title }}</h1>
+    <time>{{ post.date }}</time>
+    {{ post.body | safe }}
+  </article>
+{% endblock %}

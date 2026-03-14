@@ -1,0 +1,28 @@
+[Unit]
+Description=m6-auth service
+After=network.target
+
+[Service]
+Type=simple
+User=m6
+Group=m6
+RuntimeDirectory=m6
+RuntimeDirectoryMode=0750
+
+ExecStart=/usr/local/bin/m6-auth \
+    /var/www/my-blog \
+    /var/www/my-blog/configs/m6-auth.conf
+
+Restart=on-failure
+RestartSec=2
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=m6-auth
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/run/m6 /var/www/my-blog/data
+ReadOnlyPaths=/var/www/my-blog /etc/m6
+
+[Install]
+WantedBy=multi-user.target

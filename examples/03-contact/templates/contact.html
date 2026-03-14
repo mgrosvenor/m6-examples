@@ -1,0 +1,15 @@
+{% extends "templates/base.html" %}
+{% block title %}Contact · {{ site_name }}{% endblock %}
+{% block content %}
+  <h1>Contact</h1>
+  {% if sent %}
+    <p>Message sent. Thanks, {{ name }}!</p>
+  {% else %}
+    <form method="post" action="/contact">
+      <label>Name <input type="text" name="name" required></label>
+      <label>Email <input type="email" name="email" required></label>
+      <label>Message <textarea name="message" required></textarea></label>
+      <button type="submit">Send</button>
+    </form>
+  {% endif %}
+{% endblock %}

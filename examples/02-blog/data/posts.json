@@ -1,0 +1,13 @@
+{
+  "documents": [
+    {
+      "stem":    "hello-world",
+      "path":    "/blog/hello-world",
+      "title":   "Hello World",
+      "date":    "2024-01-15",
+      "body":    "<p>Post body in <strong>Markdown</strong>. Tables, footnotes, and strikethrough supported.</p>",
+      "summary": "A brief introduction to the blog.",
+      "tags":    ["rust", "web"]
+    }
+  ]
+}

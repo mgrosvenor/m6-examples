@@ -1,0 +1,48 @@
+[site]
+name   = "My Site"
+domain = "localhost"
+
+[server]
+bind     = "127.0.0.1:8443"
+tls_cert = "../../localhost.pem"
+tls_key  = "../../localhost-key.pem"
+
+[errors]
+mode = "internal"
+
+[log]
+level  = "info"
+format = "text"
+
+[[backend]]
+name    = "m6-html"
+sockets = "/run/m6/m6-html-*.sock"
+
+[[backend]]
+name    = "m6-file"
+sockets = "/run/m6/m6-file-*.sock"
+
+[[route]]
+path    = "/"
+backend = "m6-html"
+
+[[route]]
+path    = "/about"
+backend = "m6-html"
+
+[[route]]
+path    = "/blog"
+backend = "m6-html"
+
+[[route]]
+path    = "/blog/{stem}"
+backend = "m6-html"
+
+[[route]]
+path    = "/_errors"
+backend = "m6-html"
+
+[[route_group]]
+glob    = "assets/**/*"
+path    = "/assets/{relpath}"
+backend = "m6-file"

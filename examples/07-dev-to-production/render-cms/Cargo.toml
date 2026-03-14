@@ -1,0 +1,8 @@
+[package]
+name    = "render-cms"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+m6-render  = { git = "https://github.com/mgrosvenor/m6", tag = "v0.1.0", features = ["auth"] }
+serde_json = "1"

@@ -1,0 +1,8 @@
+{
+  "site_name": "My Site",
+  "nav": [
+    { "label": "Home",  "path": "/" },
+    { "label": "Blog",  "path": "/blog" },
+    { "label": "About", "path": "/about" }
+  ]
+}

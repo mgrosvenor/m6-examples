@@ -1,0 +1,12 @@
+{% extends "templates/base.html" %}
+{% block title %}Blog · {{ site_name }}{% endblock %}
+{% block content %}
+  <h1>Blog</h1>
+  {% for doc in documents %}
+    <article>
+      <h2><a href="/blog/{{ doc.stem }}">{{ doc.title }}</a></h2>
+      <time>{{ doc.date }}</time>
+      {% if doc.summary %}<p>{{ doc.summary }}</p>{% endif %}
+    </article>
+  {% endfor %}
+{% endblock %}
