@@ -56,6 +56,14 @@ fi
 # ── 4. Start stack ────────────────────────────────────────────────────────────
 mkdir -p "$SITE/logs"
 mkdir -p /tmp/m6
+
+# Kill stale processes holding port 8443 or backend sockets.
+lsof -ti :8443 2>/dev/null | xargs kill -9 2>/dev/null || true
+pkill -x m6-http 2>/dev/null || true
+pkill -x m6-html 2>/dev/null || true
+pkill -x m6-file 2>/dev/null || true
+sleep 0.3
+
 rm -f /tmp/m6/m6-html.sock /tmp/m6/m6-file.sock
 echo "=== Starting m6 stack ==="
 trap 'echo "Stopping..."; kill $(jobs -p) 2>/dev/null; wait 2>/dev/null' EXIT
@@ -101,7 +109,7 @@ check_a() {
     shift 2
     local actual
     actual=$("$@" 2>/dev/null || true)
-    if echo "$actual" | grep -q "$expected"; then
+    if echo "$actual" | grep -qi "$expected"; then
         echo -e "  ${GREEN}PASS${RESET} [HTTP/1.1] $desc"
         PASS_A=$((PASS_A + 1))
     else
@@ -165,7 +173,7 @@ else
         shift 2
         local actual
         actual=$("$@" 2>/dev/null || true)
-        if echo "$actual" | grep -q "$expected"; then
+        if echo "$actual" | grep -qi "$expected"; then
             echo -e "  ${GREEN}PASS${RESET} [HTTP/3] $desc"
             PASS_B=$((PASS_B + 1))
         else

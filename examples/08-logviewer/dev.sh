@@ -33,6 +33,15 @@ fi
 # ── Clean up stale state ──────────────────────────────────────────────────────
 mkdir -p "$SITE/logs"
 mkdir -p /tmp/m6
+
+# Kill any stale m6 processes holding port 8443 or our sockets.
+# lsof -ti gives PIDs silently; pkill matches by name as a belt-and-suspenders pass.
+lsof -ti :8443 2>/dev/null | xargs kill -9 2>/dev/null || true
+pkill -x m6-http 2>/dev/null || true
+pkill -x m6-html 2>/dev/null || true
+pkill -x m6-file 2>/dev/null || true
+sleep 0.3   # give the OS time to release the port and sockets
+
 rm -f /tmp/m6/m6-html.sock /tmp/m6/m6-file.sock
 
 # ── Start services ────────────────────────────────────────────────────────────
