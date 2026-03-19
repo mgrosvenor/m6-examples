@@ -15,9 +15,94 @@
 
 set -euo pipefail
 
-EXAMPLES_DIR="$(cd "$(dirname "$0")/examples" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+EXAMPLES_DIR="$SCRIPT_DIR/examples"
+M6_DIR="${M6:-$(cd "$SCRIPT_DIR/../m6" 2>/dev/null && pwd || echo "")}"
 PGID_DIR="/tmp/m6-eg"
 PORT=8443
+
+# Ensure m6 binaries are on PATH for dev.sh scripts that don't set it themselves.
+[ -n "$M6_DIR" ] && export PATH="$M6_DIR/target/release:$PATH"
+
+# ── Dependency check ─────────────────────────────────────────────────────────
+
+check_deps() {
+    local os
+    os=$(uname -s)
+    local missing=0
+
+    # Detect package manager hint
+    if [ "$os" = "Darwin" ]; then
+        INSTALL_RUST="curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+        INSTALL_MKCERT="brew install mkcert nss"
+        INSTALL_MAKE="xcode-select --install"
+    elif [ -f /etc/debian_version ]; then
+        INSTALL_RUST="curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+        INSTALL_MKCERT="  # download from https://github.com/FiloSottile/mkcert/releases\n  sudo apt install -y libnss3-tools"
+        INSTALL_MAKE="sudo apt install -y make"
+    elif [ -f /etc/redhat-release ]; then
+        INSTALL_RUST="curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+        INSTALL_MKCERT="  # download from https://github.com/FiloSottile/mkcert/releases\n  sudo dnf install -y nss-tools"
+        INSTALL_MAKE="sudo dnf install -y make"
+    else
+        INSTALL_RUST="curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+        INSTALL_MKCERT="see https://github.com/FiloSottile/mkcert"
+        INSTALL_MAKE="install make via your package manager"
+    fi
+
+    # cargo / Rust
+    if ! command -v cargo &>/dev/null; then
+        echo "  MISSING: cargo (Rust toolchain)"
+        echo "    install: $INSTALL_RUST"
+        missing=1
+    fi
+
+    # mkcert
+    if ! command -v mkcert &>/dev/null; then
+        echo "  MISSING: mkcert (dev TLS certificates)"
+        printf "    install: %b\n" "$INSTALL_MKCERT"
+        missing=1
+    fi
+
+    # make (needed by 02-blog and any example with a Makefile)
+    if ! command -v make &>/dev/null; then
+        echo "  MISSING: make"
+        echo "    install: $INSTALL_MAKE"
+        missing=1
+    fi
+
+    # m6 binaries — offer to build if missing
+    local need_build=0
+    for bin in m6-html m6-file m6-http; do
+        if ! command -v "$bin" &>/dev/null; then
+            need_build=1
+        fi
+    done
+    if [ "$need_build" -eq 1 ]; then
+        if [ -n "$M6_DIR" ] && [ -f "$M6_DIR/Cargo.toml" ]; then
+            if command -v cargo &>/dev/null; then
+                echo "  MISSING: m6 binaries (m6-html, m6-file, m6-http)"
+                echo "    building now: cargo build --release in $M6_DIR"
+                (cd "$M6_DIR" && cargo build --release)
+                echo "    done."
+            else
+                echo "  MISSING: m6 binaries — install cargo first, then run:"
+                echo "    cd $M6_DIR && cargo build --release"
+                missing=1
+            fi
+        else
+            echo "  MISSING: m6 binaries — m6 source not found at $M6_DIR"
+            echo "    set M6=/path/to/m6 and run: cargo build --release"
+            missing=1
+        fi
+    fi
+
+    if [ "$missing" -ne 0 ]; then
+        echo ""
+        echo "Fix the above and re-run."
+        exit 1
+    fi
+}
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -41,7 +126,7 @@ running_pgid() {
     [ -f "$f" ] || { echo ""; return; }
     local pg
     pg=$(cat "$f")
-    if kill -0 -- "-$pg" 2>/dev/null; then
+    if kill -0 "$pg" 2>/dev/null; then
         echo "$pg"
     else
         rm -f "$f"
@@ -56,13 +141,15 @@ kill_eg() {
     local pg
     pg=$(running_pgid "$num")
     if [ -n "$pg" ]; then
-        echo "stopping example $num (pgid $pg)..."
-        kill -- "-$pg" 2>/dev/null || true
+        echo "stopping example $num (pid $pg)..."
+        kill "$pg" 2>/dev/null || true          # SIGTERM → triggers dev.sh EXIT trap
         local i=0
-        while kill -0 -- "-$pg" 2>/dev/null && [ $i -lt 30 ]; do
+        while kill -0 "$pg" 2>/dev/null && [ $i -lt 30 ]; do
             sleep 0.1; i=$((i+1))
         done
-        kill -9 -- "-$pg" 2>/dev/null || true
+        kill -9 "$pg" 2>/dev/null || true       # force-kill if still alive
+        # Also clean up anything still on the port.
+        lsof -ti ":$PORT" 2>/dev/null | xargs kill -9 2>/dev/null || true
         rm -f "$PGID_DIR/${num}.pgid"
         echo "stopped."
     else
@@ -72,6 +159,7 @@ kill_eg() {
 
 # Start an example in a new process group.
 start_eg() {
+    check_deps
     local num
     num=$(printf "%02d" "$1")
     local dir
@@ -99,8 +187,8 @@ start_eg() {
 
     echo "starting example $num ($(basename "$dir"))..."
 
-    # setsid puts the child in a new session so we can kill the whole group cleanly.
-    setsid bash "$dev_sh" &>/tmp/m6-eg-${num}.log &
+    # Launch dev.sh directly. Its EXIT trap kills all child jobs when we SIGTERM it.
+    bash "$dev_sh" &>/tmp/m6-eg-${num}.log &
     local pg=$!
     echo "$pg" > "$PGID_DIR/${num}.pgid"
 
