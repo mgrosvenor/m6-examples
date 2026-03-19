@@ -1,5 +1,5 @@
 [site]
-name   = "My Blog"
+name   = "My Site"
 domain = "localhost"
 
 [auth]
@@ -36,11 +36,14 @@ path    = "/"
 backend = "m6-html"
 
 [[route]]
+path    = "/about"
+backend = "m6-html"
+
+[[route]]
 path    = "/blog"
 backend = "m6-html"
 
-[[route_group]]
-glob    = "content/posts/*.json"
+[[route]]
 path    = "/blog/{stem}"
 backend = "m6-html"
 

@@ -37,6 +37,9 @@ if [ ! -f "$SITE/configs/data/auth.db" ] && [ ! -f "$SITE/data/auth.db" ]; then
     m6-auth-cli "$SITE/configs/m6-auth.conf" group member add editors admin
 fi
 
+# ── Generate posts.json from markdown ─────────────────────────────────────────
+m6-md "$SITE/content/posts/" --output "$SITE/data/posts.json"
+
 # ── Clean up stale state ──────────────────────────────────────────────────────
 mkdir -p /tmp/m6
 lsof -ti :8443 2>/dev/null | xargs kill -9 2>/dev/null || true

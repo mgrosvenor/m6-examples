@@ -24,7 +24,7 @@ sockets = "/tmp/m6/m6-file*.sock"
 
 [[backend]]
 name    = "render-contact"
-sockets = "/tmp/m6/render-contact*.sock"
+sockets = "/tmp/m6/render-contact.sock"
 
 [[route]]
 path    = "/"

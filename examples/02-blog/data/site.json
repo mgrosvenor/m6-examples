@@ -1,5 +1,6 @@
 {
   "site_name": "My Site",
+  "site_tagline": "Engineering notes on performance, systems, and the web.",
   "nav": [
     { "label": "Home",  "path": "/" },
     { "label": "Blog",  "path": "/blog" },

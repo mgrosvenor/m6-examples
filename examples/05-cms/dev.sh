@@ -18,6 +18,26 @@ if [ ! -f "$SITE/keys/dev.pem" ]; then
            localhost 127.0.0.1
 fi
 
+# ── Auth keys ─────────────────────────────────────────────────────────────────
+if [ ! -f "$SITE/keys/auth.pem" ]; then
+    echo "Generating auth signing keys..."
+    openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "$SITE/keys/auth.pem"
+    openssl pkey -in "$SITE/keys/auth.pem" -pubout -out "$SITE/keys/auth.pub"
+    chmod 600 "$SITE/keys/auth.pem"
+fi
+
+# ── Auth database ─────────────────────────────────────────────────────────────
+mkdir -p "$SITE/data"
+if [ ! -f "$SITE/data/auth.db" ]; then
+    echo "Creating admin user (password: admin)..."
+    m6-auth-cli "$SITE/configs/m6-auth.conf" user add admin --password admin
+    m6-auth-cli "$SITE/configs/m6-auth.conf" group add editors
+    m6-auth-cli "$SITE/configs/m6-auth.conf" group member add editors admin
+fi
+
+# ── Generate posts.json from markdown ─────────────────────────────────────────
+m6-md "$SITE/content/posts/" --output "$SITE/data/posts.json"
+
 trap 'kill $(jobs -p) 2>/dev/null; wait 2>/dev/null' EXIT
 
 mkdir -p /tmp/m6

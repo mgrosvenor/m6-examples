@@ -1,7 +1,11 @@
 {% extends "templates/base.html" %}
-{% block title %}Home · {{ site_name }}{% endblock %}
+{% block title %}{{ site_name }}{% endblock %}
 {% block content %}
-  <h1>Welcome to {{ site_name }}</h1>
-  <p>A fast, simple website built with m6.</p>
-  <p><a href="/about">About this site</a></p>
+<div class="home-hero">
+  <h1>{{ site_name }}</h1>
+  <p class="lead">{{ site_tagline }}</p>
+</div>
+<div class="home-recent">
+  <p><a href="/about">About this site →</a></p>
+</div>
 {% endblock %}

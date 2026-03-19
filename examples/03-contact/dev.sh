@@ -20,11 +20,14 @@ if [ ! -f "$SITE/keys/dev.pem" ]; then
            localhost 127.0.0.1
 fi
 
+# ── Generate posts.json from markdown ─────────────────────────────────────────
+m6-md "$SITE/content/posts/" --output "$SITE/data/posts.json"
+
 # ── Clean up stale state ──────────────────────────────────────────────────────
 mkdir -p /tmp/m6
 lsof -ti :8443 2>/dev/null | xargs kill -9 2>/dev/null || true
 sleep 0.3
-rm -f /tmp/m6/m6-html.sock /tmp/m6/m6-file.sock /tmp/m6/render-contact.sock
+rm -f /tmp/m6/m6-html.sock /tmp/m6/m6-file.sock /tmp/m6/render-contact.sock /tmp/m6/render-contact-auth.sock
 
 # ── Start services ────────────────────────────────────────────────────────────
 M6_SOCKET_OVERRIDE=/tmp/m6/m6-html.sock \
