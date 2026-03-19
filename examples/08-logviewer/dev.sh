@@ -44,6 +44,12 @@ sleep 0.3   # give the OS time to release the port and sockets
 
 rm -f /tmp/m6/m6-html.sock /tmp/m6/m6-file.sock
 
+# Truncate log files so each run starts fresh (avoids serving stale megabytes
+# on the first tail poll from a previous session's accumulated log).
+> "$SITE/logs/m6-html.log"
+> "$SITE/logs/m6-file.log"
+> "$SITE/logs/m6-http.log"
+
 # ── Start services ────────────────────────────────────────────────────────────
 info "Starting m6-html..."
 M6_SOCKET_OVERRIDE=/tmp/m6/m6-html.sock \
@@ -92,6 +98,9 @@ if [[ "$READY" != "true" ]]; then
     echo "ERROR: server did not become ready. Check logs in $SITE/logs/" >&2
     exit 1
 fi
+
+# ── Open browser ───────────────────────────────────────────────────────────────
+open "https://localhost:8443/logs" 2>/dev/null || true
 
 # ── Print URLs ─────────────────────────────────────────────────────────────────
 echo ""

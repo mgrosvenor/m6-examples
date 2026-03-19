@@ -5,7 +5,7 @@
     { "label": "Home",    "path": "/" },
     { "label": "Blog",    "path": "/blog" },
     { "label": "About",   "path": "/about" },
-    { "label": "CMS",     "path": "/cms" },
-    { "label": "Login",   "path": "/login" }
+    { "label": "Contact", "path": "/contact" },
+    { "label": "Login",   "path": "/login?next=/cms" }
   ]
 }

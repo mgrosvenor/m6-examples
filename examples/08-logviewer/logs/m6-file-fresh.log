@@ -1,0 +1,6 @@
+[2m2026-03-15T04:25:55.388877Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m m6-file starting [3mroute_count[0m[2m=[0m2 [3msite_dir[0m[2m=[0m/Users/mgrosvenor/m6-examples/examples/08-logviewer
+[2m2026-03-15T04:25:55.389107Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m listening on Unix socket [3msocket[0m[2m=[0m/tmp/m6/m6-file.sock
+[2m2026-03-15T04:25:55.389124Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m thread pool configured [3mthreads[0m[2m=[0m10
+[2m2026-03-15T06:38:20.799395Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m m6-file starting [3mroute_count[0m[2m=[0m2 [3msite_dir[0m[2m=[0m/Users/mgrosvenor/m6-examples/examples/08-logviewer
+[2m2026-03-15T06:38:20.799557Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m listening on Unix socket [3msocket[0m[2m=[0m/tmp/m6/m6-file.sock
+[2m2026-03-15T06:38:20.799576Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m thread pool configured [3mthreads[0m[2m=[0m10

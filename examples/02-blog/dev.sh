@@ -27,7 +27,7 @@ if [[ ! -f "$SITE/keys/dev.pem" ]]; then
            localhost 127.0.0.1
 fi
 
-# ── Generate posts.json from Markdown ─────────────────────────────────────────
+# ── Generate posts.json from Markdown (initial pass) ──────────────────────────
 if command -v m6-md &>/dev/null; then
     info "Generating posts.json..."
     m6-md "$SITE/content/posts/" --output "$SITE/data/posts.json"
@@ -43,7 +43,7 @@ pkill -x m6-html 2>/dev/null || true
 pkill -x m6-file 2>/dev/null || true
 sleep 0.3
 
-rm -f /tmp/m6/m6-html.sock /tmp/m6/m6-file.sock
+rm -f /tmp/m6/m6-html*.sock /tmp/m6/m6-file*.sock
 
 # ── Start services ────────────────────────────────────────────────────────────
 info "Starting m6-html..."
@@ -56,7 +56,18 @@ M6_SOCKET_OVERRIDE=/tmp/m6/m6-file.sock \
     m6-file "$SITE" "$SITE/configs/m6-file.conf" >> "$SITE/logs/m6-file.log" 2>&1 &
 FILE_PID=$!
 
-trap 'echo ""; info "Stopping (PIDs: $HTML_PID $FILE_PID $HTTP_PID)..."; kill $HTML_PID $FILE_PID $HTTP_PID 2>/dev/null; wait 2>/dev/null' EXIT
+# Start m6-md in watch mode: re-generates posts.json on any .md save, then
+# touches site.toml so m6-http evicts and re-caches the affected pages.
+if command -v m6-md &>/dev/null; then
+    info "Starting m6-md (watch mode)..."
+    m6-md "$SITE/content/posts/" --output "$SITE/data/posts.json" \
+        --watch --touch "$SITE/site.toml" >> "$SITE/logs/m6-md.log" 2>&1 &
+    MD_PID=$!
+else
+    MD_PID=""
+fi
+
+trap 'echo ""; info "Stopping..."; kill $HTML_PID $FILE_PID ${MD_PID:-} $HTTP_PID 2>/dev/null; wait 2>/dev/null' EXIT
 
 # Wait for backend sockets
 echo -n "Waiting for backend sockets"
@@ -106,8 +117,9 @@ echo ""
 echo "  Logs:   $SITE/logs/m6-http.log"
 echo "          $SITE/logs/m6-html.log"
 echo "          $SITE/logs/m6-file.log"
+[ -n "${MD_PID:-}" ] && echo "          $SITE/logs/m6-md.log"
 echo ""
-echo "  PIDs:   m6-html=$HTML_PID  m6-file=$FILE_PID  m6-http=$HTTP_PID"
+echo "  PIDs:   m6-html=$HTML_PID  m6-file=$FILE_PID  m6-http=$HTTP_PID${MD_PID:+  m6-md=$MD_PID}"
 echo ""
 
 wait

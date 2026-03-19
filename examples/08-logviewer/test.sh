@@ -134,6 +134,14 @@ check_a "tail returns X-Log-End header" "x-log-end:" \
 check_a "tail returns Cache-Control: no-store" "no-store" \
     $CURL $OPTS11 -D - "https://localhost:8443/logs/tail/m6-http.log?offset=0" -o /dev/null
 
+# tail-n mode: offset=0&n=200 is the exact URL the browser uses on first load
+check_a "tail-n mode returns X-Log-End header" "x-log-end:" \
+    $CURL $OPTS11 -D - "https://localhost:8443/logs/tail/m6-http.log?offset=0&n=200" -o /dev/null
+
+check_a "tail-n mode returns 200" "200" \
+    $CURL $OPTS11 -o /dev/null -w "%{http_code}" \
+        "https://localhost:8443/logs/tail/m6-http.log?offset=0&n=200"
+
 END11=$($CURL $OPTS11 -D - "https://localhost:8443/logs/tail/m6-http.log?offset=0" -o /dev/null \
       2>/dev/null | grep -i x-log-end | tr -d '[:space:]' | cut -d: -f2 || true)
 check_a "tail from end offset returns empty body" "" \
@@ -197,6 +205,14 @@ else
 
     check_b "tail returns Cache-Control: no-store" "no-store" \
         $CURL $OPTS3 -D - "https://localhost:8443/logs/tail/m6-http.log?offset=0" -o /dev/null
+
+    # tail-n mode: offset=0&n=200 is the exact URL the browser uses on first load
+    check_b "tail-n mode returns X-Log-End header" "x-log-end:" \
+        $CURL $OPTS3 -D - "https://localhost:8443/logs/tail/m6-http.log?offset=0&n=200" -o /dev/null
+
+    check_b "tail-n mode returns 200" "200" \
+        $CURL $OPTS3 -o /dev/null -w "%{http_code}" \
+            "https://localhost:8443/logs/tail/m6-http.log?offset=0&n=200"
 
     END3=$($CURL $OPTS3 -D - "https://localhost:8443/logs/tail/m6-http.log?offset=0" -o /dev/null \
           2>/dev/null | grep -i x-log-end | tr -d '[:space:]' | cut -d: -f2 || true)

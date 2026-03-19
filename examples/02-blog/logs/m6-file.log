@@ -1,0 +1,63 @@
+[2m2026-03-18T09:56:44.632788Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m m6-file starting [3mroute_count[0m[2m=[0m1 [3msite_dir[0m[2m=[0m/Users/mgrosvenor/m6-examples/examples/02-blog
+[2m2026-03-18T09:56:44.633007Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m listening on Unix socket [3msocket[0m[2m=[0m/tmp/m6/m6-file.sock
+[2m2026-03-18T09:56:44.633034Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m thread pool configured [3mthreads[0m[2m=[0m10
+[2m2026-03-18T10:09:42.796650Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m m6-file starting [3mroute_count[0m[2m=[0m1 [3msite_dir[0m[2m=[0m/Users/mgrosvenor/m6-examples/examples/02-blog
+[2m2026-03-18T10:09:42.796939Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m listening on Unix socket [3msocket[0m[2m=[0m/tmp/m6/m6-file.sock
+[2m2026-03-18T10:09:42.796980Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m thread pool configured [3mthreads[0m[2m=[0m10
+[2m2026-03-18T10:14:47.192809Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m config reloaded
+[2m2026-03-18T10:14:47.192869Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m config reloaded
+[2m2026-03-18T10:18:34.019230Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m m6-file starting [3mroute_count[0m[2m=[0m1 [3msite_dir[0m[2m=[0m/Users/mgrosvenor/m6-examples/examples/02-blog
+[2m2026-03-18T10:18:34.019511Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m listening on Unix socket [3msocket[0m[2m=[0m/tmp/m6/m6-file.sock
+[2m2026-03-18T10:18:34.019559Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m thread pool configured [3mthreads[0m[2m=[0m10
+[2m2026-03-18T20:54:27.487582Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m m6-file starting [3mroute_count[0m[2m=[0m1 [3msite_dir[0m[2m=[0m/Users/mgrosvenor/m6-examples/examples/02-blog
+[2m2026-03-18T20:54:27.487887Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m listening on Unix socket [3msocket[0m[2m=[0m/tmp/m6/m6-file.sock
+[2m2026-03-18T20:54:27.487934Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m thread pool configured [3mthreads[0m[2m=[0m10
+[2m2026-03-18T21:17:07.636481Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m m6-file starting [3mroute_count[0m[2m=[0m1 [3msite_dir[0m[2m=[0m/Users/mgrosvenor/m6-examples/examples/02-blog
+[2m2026-03-18T21:17:07.636772Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m listening on Unix socket [3msocket[0m[2m=[0m/tmp/m6/m6-file.sock
+[2m2026-03-18T21:17:07.636811Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m thread pool configured [3mthreads[0m[2m=[0m10
+[2m2026-03-18T21:19:08.631614Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m m6-file starting [3mroute_count[0m[2m=[0m1 [3msite_dir[0m[2m=[0m/Users/mgrosvenor/m6-examples/examples/02-blog
+[2m2026-03-18T21:19:08.632077Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m listening on Unix socket [3msocket[0m[2m=[0m/tmp/m6/m6-file.sock
+[2m2026-03-18T21:19:08.632174Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m thread pool configured [3mthreads[0m[2m=[0m10
+[2m2026-03-18T22:22:44.965118Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m m6-file starting [3mroute_count[0m[2m=[0m1 [3msite_dir[0m[2m=[0m/Users/mgrosvenor/m6-examples/examples/02-blog
+[2m2026-03-18T22:22:44.965379Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m listening on Unix socket [3msocket[0m[2m=[0m/tmp/m6/m6-file.sock
+[2m2026-03-18T22:22:44.965416Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m thread pool configured [3mthreads[0m[2m=[0m10
+[2m2026-03-18T22:41:23.518567Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m m6-file starting [3mroute_count[0m[2m=[0m1 [3msite_dir[0m[2m=[0m/Users/mgrosvenor/m6-examples/examples/02-blog
+[2m2026-03-18T22:41:23.518789Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m listening on Unix socket [3msocket[0m[2m=[0m/tmp/m6/m6-file.sock
+[2m2026-03-18T22:41:23.518819Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m thread pool configured [3mthreads[0m[2m=[0m10
+[2m2026-03-18T22:47:42.891681Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m m6-file starting [3mroute_count[0m[2m=[0m1 [3msite_dir[0m[2m=[0m/Users/mgrosvenor/m6-examples/examples/02-blog
+[2m2026-03-18T22:47:42.891946Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m listening on Unix socket [3msocket[0m[2m=[0m/tmp/m6/m6-file.sock
+[2m2026-03-18T22:47:42.891982Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m thread pool configured [3mthreads[0m[2m=[0m10
+[2m2026-03-18T22:54:59.706136Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m m6-file starting [3mroute_count[0m[2m=[0m1 [3msite_dir[0m[2m=[0m/Users/mgrosvenor/m6-examples/examples/02-blog
+[2m2026-03-18T22:54:59.706365Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m listening on Unix socket [3msocket[0m[2m=[0m/tmp/m6/m6-file.sock
+[2m2026-03-18T22:54:59.706394Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m thread pool configured [3mthreads[0m[2m=[0m10
+[2m2026-03-18T22:57:09.304626Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m m6-file starting [3mroute_count[0m[2m=[0m1 [3msite_dir[0m[2m=[0m/Users/mgrosvenor/m6-examples/examples/02-blog
+[2m2026-03-18T22:57:09.304905Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m listening on Unix socket [3msocket[0m[2m=[0m/tmp/m6/m6-file.sock
+[2m2026-03-18T22:57:09.304938Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m thread pool configured [3mthreads[0m[2m=[0m10
+[2m2026-03-18T23:00:32.006324Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m m6-file starting [3mroute_count[0m[2m=[0m1 [3msite_dir[0m[2m=[0m/Users/mgrosvenor/m6-examples/examples/02-blog
+[2m2026-03-18T23:00:32.006568Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m listening on Unix socket [3msocket[0m[2m=[0m/tmp/m6/m6-file.sock
+[2m2026-03-18T23:00:32.006596Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m thread pool configured [3mthreads[0m[2m=[0m10
+[2m2026-03-18T23:13:22.447163Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m config reloaded
+[2m2026-03-18T23:13:22.447313Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m config reloaded
+[2m2026-03-18T23:24:32.160739Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m m6-file starting [3mroute_count[0m[2m=[0m1 [3msite_dir[0m[2m=[0m/Users/mgrosvenor/m6-examples/examples/02-blog
+[2m2026-03-18T23:24:32.160989Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m listening on Unix socket [3msocket[0m[2m=[0m/tmp/m6/m6-file.sock
+[2m2026-03-18T23:24:32.161037Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m thread pool configured [3mthreads[0m[2m=[0m10
+[2m2026-03-18T23:37:14.374014Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m m6-file starting [3mroute_count[0m[2m=[0m1 [3msite_dir[0m[2m=[0m/Users/mgrosvenor/m6-examples/examples/02-blog
+[2m2026-03-18T23:37:14.374229Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m listening on Unix socket [3msocket[0m[2m=[0m/tmp/m6/m6-file.sock
+[2m2026-03-18T23:37:14.374259Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m thread pool configured [3mthreads[0m[2m=[0m10
+[2m2026-03-18T23:41:44.440239Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m m6-file starting [3mroute_count[0m[2m=[0m1 [3msite_dir[0m[2m=[0m/Users/mgrosvenor/m6-examples/examples/02-blog
+[2m2026-03-18T23:41:44.440866Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m listening on Unix socket [3msocket[0m[2m=[0m/tmp/m6/m6-file.sock
+[2m2026-03-18T23:41:44.441098Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m thread pool configured [3mthreads[0m[2m=[0m10
+[2m2026-03-18T23:48:12.638214Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m m6-file starting [3mroute_count[0m[2m=[0m1 [3msite_dir[0m[2m=[0m/Users/mgrosvenor/m6-examples/examples/02-blog
+[2m2026-03-18T23:48:12.638429Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m listening on Unix socket [3msocket[0m[2m=[0m/tmp/m6/m6-file.sock
+[2m2026-03-18T23:48:12.638455Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m thread pool configured [3mthreads[0m[2m=[0m10
+[2m2026-03-18T23:49:14.561940Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m config reloaded
+[2m2026-03-18T23:49:14.564346Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m config reloaded
+[2m2026-03-19T06:26:55.621990Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m m6-file starting [3mroute_count[0m[2m=[0m1 [3msite_dir[0m[2m=[0m/Users/mgrosvenor/m6-examples/examples/02-blog
+[2m2026-03-19T06:26:55.622126Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m listening on Unix socket [3msocket[0m[2m=[0m/tmp/m6/m6-file.sock
+[2m2026-03-19T06:26:55.622139Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m thread pool configured [3mthreads[0m[2m=[0m10
+[2m2026-03-19T06:50:47.397946Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m m6-file starting [3mroute_count[0m[2m=[0m1 [3msite_dir[0m[2m=[0m/Users/mgrosvenor/m6-examples/examples/02-blog
+[2m2026-03-19T06:50:47.398351Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m listening on Unix socket [3msocket[0m[2m=[0m/tmp/m6/m6-file.sock
+[2m2026-03-19T06:50:47.398418Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m thread pool configured [3mthreads[0m[2m=[0m10
+[2m2026-03-19T09:33:12.430859Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m m6-file starting [3mroute_count[0m[2m=[0m1 [3msite_dir[0m[2m=[0m/Users/mgrosvenor/m6-examples/examples/02-blog
+[2m2026-03-19T09:33:12.431193Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m listening on Unix socket [3msocket[0m[2m=[0m/tmp/m6/m6-file.sock
+[2m2026-03-19T09:33:12.431237Z[0m [32m INFO[0m [2mm6_file[0m[2m:[0m thread pool configured [3mthreads[0m[2m=[0m10

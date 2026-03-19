@@ -44,7 +44,7 @@ m6-md "$SITE/content/posts/" --output "$SITE/data/posts.json"
 mkdir -p /tmp/m6
 lsof -ti :8443 2>/dev/null | xargs kill -9 2>/dev/null || true
 sleep 0.3
-rm -f /tmp/m6/m6-html.sock /tmp/m6/m6-file.sock /tmp/m6/m6-auth.sock /tmp/m6/render-contact-auth.sock
+rm -f /tmp/m6/m6-html*.sock /tmp/m6/m6-file*.sock /tmp/m6/m6-auth*.sock /tmp/m6/render-contact-auth*.sock
 
 # ── Start services ────────────────────────────────────────────────────────────
 M6_SOCKET_OVERRIDE=/tmp/m6/m6-html.sock \

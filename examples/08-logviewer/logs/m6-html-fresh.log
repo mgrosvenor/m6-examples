@@ -1,0 +1,6 @@
+[2m2026-03-15T04:25:55.421056Z[0m [32m INFO[0m [2mm6_render::app[0m[2m:[0m m6-render started [3mroutes[0m[2m=[0m2 [3mthreads[0m[2m=[0m10 [3msocket[0m[2m=[0m/tmp/m6/m6-html.sock
+[2m2026-03-15T06:38:20.275157Z[0m [32m INFO[0m [2mm6_render::app[0m[2m:[0m Shutdown signal received, draining...
+[2m2026-03-15T06:38:20.275251Z[0m [32m INFO[0m [2mm6_render::app[0m[2m:[0m Clean shutdown
+[2m2026-03-15T06:38:20.829085Z[0m [32m INFO[0m [2mm6_render::app[0m[2m:[0m m6-render started [3mroutes[0m[2m=[0m2 [3mthreads[0m[2m=[0m10 [3msocket[0m[2m=[0m/tmp/m6/m6-html.sock
+[2m2026-03-15T09:37:28.194612Z[0m [32m INFO[0m [2mm6_render::app[0m[2m:[0m Shutdown signal received, draining...
+[2m2026-03-15T09:37:28.194681Z[0m [32m INFO[0m [2mm6_render::app[0m[2m:[0m Clean shutdown

@@ -7,7 +7,7 @@
 # Usage:
 #   ./bench.sh [--http11-only] [--http3-only] [--latency-n N]
 #              [--throughput-n N] [--concurrency C]
-#              [--p99-limit-ms F] [--rps-min F]
+#              [--p99-limit-us F] [--rps-min F]
 #
 # Pass-through flags are forwarded to m6-bench unchanged.
 set -e

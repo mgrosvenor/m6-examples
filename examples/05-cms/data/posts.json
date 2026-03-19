@@ -170,6 +170,19 @@
         "production"
       ],
       "title": "Guide 07: Dev to Production"
+    },
+    {
+      "author": "admin",
+      "body": "<p>Vditor type: function | window.Vditor: function</p>\n",
+      "body_md": "Vditor type: function | window.Vditor: function\n",
+      "cover": null,
+      "date": "0100-10-10",
+      "path": "/blog/test",
+      "published_at": "2026-03-19T15:08:00Z",
+      "stem": "test",
+      "summary": "Test",
+      "tags": [],
+      "title": "Test"
     }
   ]
 }

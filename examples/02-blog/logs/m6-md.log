@@ -1,0 +1,15 @@
+{"timestamp":"2026-03-19T09:33:11.924776Z","level":"INFO","fields":{"message":"processing markdown files","count":12,"dir":"/Users/mgrosvenor/m6-examples/examples/02-blog/content/posts/"},"target":"m6_md"}
+{"timestamp":"2026-03-19T09:33:11.925272Z","level":"INFO","fields":{"message":"processed","file":"/Users/mgrosvenor/m6-examples/examples/02-blog/content/posts/architecture.md"},"target":"m6_md"}
+{"timestamp":"2026-03-19T09:33:11.925391Z","level":"INFO","fields":{"message":"processed","file":"/Users/mgrosvenor/m6-examples/examples/02-blog/content/posts/guide-00-prerequisites.md"},"target":"m6_md"}
+{"timestamp":"2026-03-19T09:33:11.925529Z","level":"INFO","fields":{"message":"processed","file":"/Users/mgrosvenor/m6-examples/examples/02-blog/content/posts/guide-01-static-site.md"},"target":"m6_md"}
+{"timestamp":"2026-03-19T09:33:11.925648Z","level":"INFO","fields":{"message":"processed","file":"/Users/mgrosvenor/m6-examples/examples/02-blog/content/posts/guide-02-blog.md"},"target":"m6_md"}
+{"timestamp":"2026-03-19T09:33:11.925769Z","level":"INFO","fields":{"message":"processed","file":"/Users/mgrosvenor/m6-examples/examples/02-blog/content/posts/guide-03-contact-form.md"},"target":"m6_md"}
+{"timestamp":"2026-03-19T09:33:11.925910Z","level":"INFO","fields":{"message":"processed","file":"/Users/mgrosvenor/m6-examples/examples/02-blog/content/posts/guide-04-auth.md"},"target":"m6_md"}
+{"timestamp":"2026-03-19T09:33:11.926080Z","level":"INFO","fields":{"message":"processed","file":"/Users/mgrosvenor/m6-examples/examples/02-blog/content/posts/guide-05-cms.md"},"target":"m6_md"}
+{"timestamp":"2026-03-19T09:33:11.926212Z","level":"INFO","fields":{"message":"processed","file":"/Users/mgrosvenor/m6-examples/examples/02-blog/content/posts/guide-06-systemd.md"},"target":"m6_md"}
+{"timestamp":"2026-03-19T09:33:11.926383Z","level":"INFO","fields":{"message":"processed","file":"/Users/mgrosvenor/m6-examples/examples/02-blog/content/posts/guide-07-dev-to-production.md"},"target":"m6_md"}
+{"timestamp":"2026-03-19T09:33:11.926576Z","level":"INFO","fields":{"message":"processed","file":"/Users/mgrosvenor/m6-examples/examples/02-blog/content/posts/m6-http-deep-dive.md"},"target":"m6_md"}
+{"timestamp":"2026-03-19T09:33:11.926694Z","level":"INFO","fields":{"message":"processed","file":"/Users/mgrosvenor/m6-examples/examples/02-blog/content/posts/m6-render-deep-dive.md"},"target":"m6_md"}
+{"timestamp":"2026-03-19T09:33:11.926814Z","level":"INFO","fields":{"message":"processed","file":"/Users/mgrosvenor/m6-examples/examples/02-blog/content/posts/quick-start.md"},"target":"m6_md"}
+{"timestamp":"2026-03-19T09:33:11.927353Z","level":"INFO","fields":{"message":"wrote output","output":"/Users/mgrosvenor/m6-examples/examples/02-blog/data/posts.json","documents":12},"target":"m6_md"}
+{"timestamp":"2026-03-19T09:33:11.929197Z","level":"INFO","fields":{"message":"watching for .md changes","dir":"/Users/mgrosvenor/m6-examples/examples/02-blog/content/posts/"},"target":"m6_md"}

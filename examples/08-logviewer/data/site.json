@@ -2,6 +2,7 @@
   "site_name": "Log Viewer Demo",
   "nav": [
     { "label": "Home",     "href": "/" },
-    { "label": "Log Viewer", "href": "/logs" }
+    { "label": "Log Viewer", "href": "/logs" },
+    { "label": "Bench",      "href": "/bench" }
   ]
 }

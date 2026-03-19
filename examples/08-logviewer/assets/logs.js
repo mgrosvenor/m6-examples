@@ -10,7 +10,20 @@
   // Per-process byte offsets. Reset when process selection changes.
   const offsets = {};
 
-  let pollTimer = null;
+  // Number of lines to request on first load (tail -n behaviour).
+  const TAIL_LINES = 200;
+
+  // Maximum rows to keep in the table; oldest are trimmed from the top.
+  const MAX_ROWS = 1000;
+
+  let pollTimer  = null;
+  let errorCount = 0;   // consecutive network errors; cleared on success
+  let polling    = false;  // prevents overlapping polls
+
+  // After this many consecutive NetworkErrors the page reloads.  Firefox
+  // caches a dead H2 connection after a server restart and will not retry
+  // on its own; a reload is the only way to clear that state.
+  const RELOAD_AFTER_ERRORS = 15;
 
   function currentProcess() {
     return processSelect.value;
@@ -66,20 +79,52 @@
   }
 
   async function poll() {
+    if (polling) return;   // previous fetch still in flight; skip this tick
+    polling = true;
+
     const proc   = currentProcess();
     const offset = offsets[proc] || 0;
+    const t0     = performance.now();
+    console.debug('[logviewer] poll', proc, 'offset=' + offset);
+
     let resp;
     try {
-      resp = await fetch('/logs/tail/' + proc + '.log?offset=' + offset);
+      const nParam = offset === 0 ? '&n=' + TAIL_LINES : '';
+      resp = await fetch('/logs/tail/' + proc + '.log?offset=' + offset + nParam);
     } catch (e) {
-      setStatus('Network error: ' + e.message);
+      const elapsed = (performance.now() - t0).toFixed(0);
+      console.warn('[logviewer] NetworkError after ' + elapsed + 'ms (' + proc + ')', e);
+      errorCount++;
+      if (errorCount >= RELOAD_AFTER_ERRORS) {
+        // Firefox has cached the dead connection and will not reconnect on its
+        // own (e.g. after a server restart).  Reload to clear its state.
+        console.warn('[logviewer] too many errors, reloading page');
+        window.location.reload();
+        return;
+      }
+      if (errorCount <= 2) {
+        setStatus('Reconnecting…');
+      } else {
+        setStatus('Network error (' + errorCount + '): ' + e.message);
+      }
+      polling = false;
+      schedulePoll(250);
       return;
     }
 
+    const elapsed = (performance.now() - t0).toFixed(0);
+    console.debug('[logviewer] response', proc, resp.status, elapsed + 'ms',
+                  'X-Log-End=' + resp.headers.get('X-Log-End'));
+
     if (!resp.ok) {
+      errorCount++;
+      console.warn('[logviewer] HTTP error', resp.status, proc);
       setStatus(proc + '.log — HTTP ' + resp.status);
+      polling = false;
       return;
     }
+
+    errorCount = 0;
 
     const newOffset = resp.headers.get('X-Log-End');
     if (newOffset !== null) offsets[proc] = parseInt(newOffset, 10);
@@ -87,6 +132,7 @@
     const text = await resp.text();
     if (!text.trim()) {
       setStatus('Watching ' + proc + '.log — no new entries');
+      polling = false;
       return;
     }
 
@@ -112,19 +158,37 @@
       }
     }
 
-    if (count > 0 && autoscrollBox.checked) {
-      tbody.lastElementChild && tbody.lastElementChild.scrollIntoView({ behavior: 'smooth' });
+    if (count > 0) {
+      const excess = tbody.children.length - MAX_ROWS;
+      for (let i = 0; i < excess; i++) tbody.removeChild(tbody.firstElementChild);
+      if (autoscrollBox.checked) {
+        tbody.lastElementChild && tbody.lastElementChild.scrollIntoView({ behavior: 'smooth' });
+      }
     }
     setStatus('Watching ' + proc + '.log — ' + (offsets[proc] || 0) + ' bytes read');
+    polling = false;
+  }
+
+  function schedulePoll(delayMs) {
+    if (pollTimer) clearTimeout(pollTimer);
+    pollTimer = setTimeout(async function () {
+      pollTimer = null;        // clear so we can tell if poll() re-schedules
+      await poll();
+      if (!pollTimer) {        // poll() didn't re-schedule (no error path taken)
+        schedulePoll(1000);
+      }
+    }, delayMs);
   }
 
   function startPolling() {
-    if (pollTimer) clearInterval(pollTimer);
-    poll();
-    pollTimer = setInterval(poll, 1000);
+    if (pollTimer) clearTimeout(pollTimer);
+    polling    = false;
+    errorCount = 0;
+    schedulePoll(0);
   }
 
   processSelect.addEventListener('change', function () {
+    console.info('[logviewer] switched to', currentProcess());
     tbody.innerHTML = '';
     setStatus('Switching to ' + currentProcess() + '.log…');
     startPolling();
