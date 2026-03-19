@@ -2,13 +2,16 @@
 # m6-run-eg — start, restart, rebuild, reload, or stop an m6 example's dev stack.
 #
 # Usage:
-#   m6-run-eg                      interactive prompt
-#   m6-run-eg <N>                  start example N, or reload config if already running
-#   m6-run-eg <N> start            start example N
-#   m6-run-eg <N> restart          kill all services, then start fresh
-#   m6-run-eg <N> rebuild          run make/cargo build, then touch site.toml
-#   m6-run-eg <N> reload           touch site.toml only (no build, no restart)
-#   m6-run-eg <N> stop             stop example N
+#   m6-run-eg                           interactive prompt
+#   m6-run-eg <N>                       start example N, or reload config if already running
+#   m6-run-eg <N> start                 start example N
+#   m6-run-eg <N> restart               kill all services, then start fresh
+#   m6-run-eg <N> rebuild               run make/cargo build, then touch site.toml
+#   m6-run-eg <N> reload                touch site.toml only (no build, no restart)
+#   m6-run-eg <N> stop                  stop example N
+#
+# Flags (can appear anywhere):
+#   --no-browser                        don't open the browser after start
 #
 # Examples live in examples/<NN>-<name>/dev.sh
 # Each dev stack owns a pgid stored in /tmp/m6-eg/<NN>.pgid
@@ -20,6 +23,7 @@ EXAMPLES_DIR="$SCRIPT_DIR/examples"
 M6_DIR="${M6:-$(cd "$SCRIPT_DIR/../m6" 2>/dev/null && pwd || echo "")}"
 PGID_DIR="/tmp/m6-eg"
 PORT=8443
+OPEN_BROWSER=1
 
 # Ensure m6 binaries are on PATH for dev.sh scripts that don't set it themselves.
 [ -n "$M6_DIR" ] && export PATH="$M6_DIR/target/release:$PATH"
@@ -210,7 +214,7 @@ start_eg() {
     done
     if lsof -ti ":$PORT" &>/dev/null; then
         echo "up. $(date '+%H:%M:%S')"
-        open_browser "$1"
+        [ "$OPEN_BROWSER" = "1" ] && open_browser "$1"
     else
         echo "port $PORT not open after 10s — check /tmp/m6-eg-${num}.log"
     fi
@@ -334,8 +338,17 @@ interactive() {
 
 # ── main ─────────────────────────────────────────────────────────────────────
 
-NUM="${1:-}"
-ACTION="${2:-}"
+# Parse flags (can appear anywhere in the args).
+ARGS=()
+for arg in "$@"; do
+    case "$arg" in
+        --no-browser) OPEN_BROWSER=0 ;;
+        *)            ARGS+=("$arg") ;;
+    esac
+done
+
+NUM="${ARGS[0]:-}"
+ACTION="${ARGS[1]:-}"
 
 if [ -z "$NUM" ]; then
     interactive
