@@ -15,19 +15,19 @@ format = "text"
 
 [[backend]]
 name    = "m6-html"
-sockets = "/run/m6/m6-html-*.sock"
+sockets = "/tmp/m6/m6-html*.sock"
 
 [[backend]]
 name    = "m6-file"
-sockets = "/run/m6/m6-file-*.sock"
+sockets = "/tmp/m6/m6-file*.sock"
 
 [[backend]]
 name    = "m6-auth"
-sockets = "/run/m6/m6-auth-*.sock"
+sockets = "/tmp/m6/m6-auth*.sock"
 
 [[backend]]
 name    = "render-cms"
-sockets = "/run/m6/render-cms-*.sock"
+sockets = "/tmp/m6/render-cms-prod*.sock"
 
 # ── Public routes — no auth, fully cached ─────────────────────
 

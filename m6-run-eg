@@ -185,6 +185,16 @@ start_eg() {
     lsof -ti ":$PORT" 2>/dev/null | xargs kill -9 2>/dev/null || true
     sleep 0.3
 
+    # Build any Cargo sub-packages for this example before launching.
+    while IFS= read -r cargo_toml; do
+        local pkg_name
+        pkg_name=$(grep '^name' "$cargo_toml" | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+        if [ -n "$pkg_name" ] && ! [ -f "$SCRIPT_DIR/target/release/$pkg_name" ]; then
+            echo "building $pkg_name..."
+            (cd "$SCRIPT_DIR" && cargo build --release -p "$pkg_name")
+        fi
+    done < <(find "$dir" -maxdepth 2 -name "Cargo.toml")
+
     echo "starting example $num ($(basename "$dir"))..."
 
     # Launch dev.sh directly. Its EXIT trap kills all child jobs when we SIGTERM it.
@@ -200,8 +210,35 @@ start_eg() {
     done
     if lsof -ti ":$PORT" &>/dev/null; then
         echo "up. $(date '+%H:%M:%S')"
+        open_browser "$1"
     else
         echo "port $PORT not open after 10s — check /tmp/m6-eg-${num}.log"
+    fi
+}
+
+# Return the landing URL path for a given example number.
+example_url_path() {
+    case "$1" in
+        4)  echo "/login" ;;
+        5)  echo "/cms" ;;
+        7)  echo "/cms" ;;
+        8)  echo "/logs" ;;
+        *)  echo "/" ;;
+    esac
+}
+
+# Open the browser to the example's landing URL, or print it if unavailable.
+open_browser() {
+    local path
+    path=$(example_url_path "$1")
+    local url="https://localhost:${PORT}${path}"
+    if command -v open &>/dev/null; then          # macOS
+        open "$url" 2>/dev/null || true
+    elif command -v xdg-open &>/dev/null; then    # Linux
+        xdg-open "$url" 2>/dev/null || true
+    else
+        echo ""
+        echo "Open in browser: $url"
     fi
 }
 

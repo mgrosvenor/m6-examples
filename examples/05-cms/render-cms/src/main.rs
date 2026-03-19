@@ -3,9 +3,6 @@ use serde_json::{json, Value};
 use std::fs;
 
 fn main() -> Result<()> {
-    // render-cms uses JSON files directly — no state needed.
-    // A real CMS would use App::with_state(init_global, init_thread)
-    // to hold a database connection per thread.
     App::new()
         .route_get("/cms",             handle_dashboard)
         .route_get("/cms/new",         handle_new)
@@ -41,7 +38,7 @@ fn handle_edit(req: &Request) -> Result<Response> {
 
 fn handle_create_draft(req: &Request) -> Result<Response> {
     let body: Value = req.body_json()?;
-    let stem  = req["title"].as_str().unwrap_or("untitled").to_slug();
+    let stem  = slugify(body["title"].as_str().unwrap_or("untitled"));
     let draft = json!({
         "stem":   stem,
         "title":  body["title"],
@@ -50,7 +47,7 @@ fn handle_create_draft(req: &Request) -> Result<Response> {
         "date":   today_iso8601(),
     });
     req.write_json(&format!("content/drafts/{}.json", stem), &draft)?;
-    Response::json_status(json!({"stem": stem}), 201)
+    Ok(Response::json_status(json!({"stem": stem}), 201))
 }
 
 fn handle_update_draft(req: &Request) -> Result<Response> {
@@ -61,7 +58,7 @@ fn handle_update_draft(req: &Request) -> Result<Response> {
     if let Some(t) = body.get("title") { draft["title"] = t.clone(); }
     if let Some(b) = body.get("body")  { draft["body"]  = b.clone(); }
     req.write_json(&path, &draft)?;
-    Response::json(json!({"ok": true}))
+    Ok(Response::json(json!({"ok": true})))
 }
 
 fn handle_publish(req: &Request) -> Result<Response> {
@@ -76,10 +73,10 @@ fn handle_publish(req: &Request) -> Result<Response> {
 
     req.write_json_atomic(&publish_path, &post)?;
     update_index(req)?;
-    req.touch_site_toml()?;
+    req.touch("site.toml")?;
     let _ = fs::remove_file(req.site_path(&draft_path));
 
-    Response::json(json!({"published": true, "path": post["path"]}))
+    Ok(Response::json(json!({"published": true, "path": post["path"]})))
 }
 
 fn handle_unpublish(req: &Request) -> Result<Response> {
@@ -90,11 +87,11 @@ fn handle_unpublish(req: &Request) -> Result<Response> {
     let mut post = req.read_json(&publish_path)?;
     post["draft"] = json!(true);
     req.write_json(&draft_path, &post)?;
-    fs::remove_file(req.site_path(&publish_path))?;
+    let _ = fs::remove_file(req.site_path(&publish_path));
     update_index(req)?;
-    req.touch_site_toml()?;
+    req.touch("site.toml")?;
 
-    Response::json(json!({"unpublished": true}))
+    Ok(Response::json(json!({"unpublished": true})))
 }
 
 fn update_index(req: &Request) -> Result<()> {

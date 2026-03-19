@@ -4,5 +4,5 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-m6-render  = { git = "https://github.com/mgrosvenor/m6", tag = "v0.1.0", features = ["auth"] }
+m6-render  = { path = "../../../../m6/m6-render" }
 serde_json = "1"
