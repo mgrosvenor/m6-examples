@@ -1,0 +1,118 @@
+# Cache site config — local dev
+# Used by all 5 cache node instances (ports 9002–9006).
+# All requests are proxied upstream to the local origin H2C instance on port 9000.
+
+[site]
+name   = "My Blog"
+domain = "localhost"
+
+[errors]
+mode = "internal"
+
+[log]
+level  = "info"
+format = "text"
+
+# ── Backend — origin H2C (local dev) ──────────────────────────────────────────
+
+[[backend]]
+name = "origin"
+url  = "h2c://127.0.0.1:9000"
+
+# ── Public routes ──────────────────────────────────────────────────────────────
+
+[[route]]
+path    = "/"
+backend = "origin"
+
+[[route]]
+path    = "/about"
+backend = "origin"
+
+[[route]]
+path    = "/blog"
+backend = "origin"
+
+[[route]]
+path    = "/blog/{stem}"
+backend = "origin"
+
+[[route]]
+path    = "/assets/{*relpath}"
+backend = "origin"
+
+[[route]]
+path    = "/_errors"
+backend = "origin"
+
+[[route]]
+path    = "/contact"
+backend = "origin"
+
+# ── Auth ───────────────────────────────────────────────────────────────────────
+
+[[route]]
+path    = "/login"
+backend = "origin"
+
+[[route]]
+path    = "/auth/login"
+backend = "origin"
+
+[[route]]
+path    = "/auth/logout"
+backend = "origin"
+
+[[route]]
+path    = "/auth/refresh"
+backend = "origin"
+
+# ── CMS — never cached ─────────────────────────────────────────────────────────
+
+[[route]]
+path      = "/cms"
+backend   = "origin"
+require   = "group:editors"
+cache     = "no-store"
+
+[[route]]
+path      = "/cms/edit/{stem}"
+backend   = "origin"
+require   = "group:editors"
+cache     = "no-store"
+
+[[route]]
+path      = "/cms/new"
+backend   = "origin"
+require   = "group:editors"
+cache     = "no-store"
+
+[[route]]
+path      = "/api/drafts"
+backend   = "origin"
+require   = "group:editors"
+cache     = "no-store"
+
+[[route]]
+path      = "/api/drafts/{stem}"
+backend   = "origin"
+require   = "group:editors"
+cache     = "no-store"
+
+[[route]]
+path      = "/api/publish/{stem}"
+backend   = "origin"
+require   = "group:editors"
+cache     = "no-store"
+
+[[route]]
+path      = "/api/unpublish/{stem}"
+backend   = "origin"
+require   = "group:editors"
+cache     = "no-store"
+
+[[route]]
+path      = "/api/posts/{stem}"
+backend   = "origin"
+require   = "group:editors"
+cache     = "no-store"

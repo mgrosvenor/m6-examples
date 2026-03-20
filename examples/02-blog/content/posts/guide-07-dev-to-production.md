@@ -14,7 +14,8 @@ cover   = "https://picsum.photos/seed/guide07/1200/500"
 [Example 04](/blog/guide-04-auth) →
 [Example 05](/blog/guide-05-cms) →
 [Example 06](/blog/guide-06-systemd) →
-**Example 07 — Dev to Production**
+**Example 07 — Dev to Production** →
+[Example 08](/blog/guide-08-global-deployment)
 
 ---
 
@@ -308,4 +309,4 @@ That completes the guide. For the architecture deep-dives, see the [architecture
 
 ---
 
-**← [Example 06 — Production with systemd](/blog/guide-06-systemd)**
+**← [Example 06 — Production with systemd](/blog/guide-06-systemd)** | **[Example 08 — Global Deployment](/blog/guide-08-global-deployment) →**

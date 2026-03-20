@@ -1,0 +1,6 @@
+# San Francisco cache node
+
+[server]
+bind     = "0.0.0.0:443"
+tls_cert = "/etc/letsencrypt/live/sf.example.com/fullchain.pem"
+tls_key  = "/etc/letsencrypt/live/sf.example.com/privkey.pem"

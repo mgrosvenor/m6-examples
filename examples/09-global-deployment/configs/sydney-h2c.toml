@@ -1,0 +1,5 @@
+# Sydney — H2C backbone face (cache nodes → Sydney over WireGuard)
+# Binds only on the WireGuard interface. No TLS — WireGuard encrypts the tunnel.
+
+[server]
+bind = "10.0.0.1:80"

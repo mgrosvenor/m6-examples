@@ -1,0 +1,6 @@
+# Singapore cache node
+
+[server]
+bind     = "0.0.0.0:443"
+tls_cert = "/etc/letsencrypt/live/sin.example.com/fullchain.pem"
+tls_key  = "/etc/letsencrypt/live/sin.example.com/privkey.pem"

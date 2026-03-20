@@ -1,0 +1,6 @@
+# London cache node (local dev) — port 9005
+
+[server]
+bind     = "127.0.0.1:9005"
+tls_cert = "certs/local.pem"
+tls_key  = "certs/local-key.pem"

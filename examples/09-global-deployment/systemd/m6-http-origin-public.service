@@ -1,0 +1,15 @@
+[Unit]
+Description=m6-http origin — public TLS face (Oceania + default)
+After=network.target m6-html.service m6-file.service m6-auth.service render-cms.service
+
+[Service]
+Type=simple
+User=m6
+ExecStart=/usr/local/bin/m6-http \
+    /var/www/my-blog \
+    /etc/m6/sydney-public.toml
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

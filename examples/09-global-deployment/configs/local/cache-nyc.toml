@@ -1,0 +1,6 @@
+# New York cache node (local dev) — port 9003
+
+[server]
+bind     = "127.0.0.1:9003"
+tls_cert = "certs/local.pem"
+tls_key  = "certs/local-key.pem"

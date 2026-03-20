@@ -1,0 +1,6 @@
+# San Francisco cache node (local dev) — port 9002
+
+[server]
+bind     = "127.0.0.1:9002"
+tls_cert = "certs/local.pem"
+tls_key  = "certs/local-key.pem"

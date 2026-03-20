@@ -1,0 +1,7 @@
+# Sydney — public face (Oceania + default fallback)
+# Serves users directly over TLS. Share site dir with the H2C instance.
+
+[server]
+bind     = "0.0.0.0:443"
+tls_cert = "/etc/letsencrypt/live/syd.example.com/fullchain.pem"
+tls_key  = "/etc/letsencrypt/live/syd.example.com/privkey.pem"
