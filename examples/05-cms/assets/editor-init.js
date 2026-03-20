@@ -116,9 +116,9 @@ if (!dateEl.value) {
 }
 
 // ── Language preference ───────────────────────────────────────────────────────
-var VALID_LANGS = ['en_US', 'zh_CN', 'ja_JP', 'ko_KR'];
-var editorLang = localStorage.getItem('cms_editor_lang') || 'en_US';
-if (!VALID_LANGS.includes(editorLang)) editorLang = 'en_US';
+var VALID_LANGS = ['en_AU', 'en_US', 'de_DE', 'es_ES', 'fr_FR', 'it_IT', 'nl_NL', 'pl_PL', 'pt_PT', 'sv_SE', 'zh_CN', 'ja_JP', 'ko_KR'];
+var editorLang = localStorage.getItem('cms_editor_lang') || 'en_AU';
+if (!VALID_LANGS.includes(editorLang)) editorLang = 'en_AU';
 
 var langEl = document.getElementById('ed-lang');
 if (langEl) langEl.value = editorLang;
