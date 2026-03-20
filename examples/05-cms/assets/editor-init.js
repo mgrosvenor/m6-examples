@@ -130,31 +130,51 @@ function setEditorLang(lang) {
 }
 
 // ── Vditor WYSIWYG editor ─────────────────────────────────────────────────────
+// Vditor only accepts a fixed set of lang codes; custom codes (en_AU, de_DE …)
+// throw "options.lang error".  The i18n option bypasses that check entirely —
+// load the translations file first, then pass the result in directly.
 var editor;
-try {
-  editor = new Vditor('editor', {
-    height:  520,
-    mode:    'ir',
-    lang:    editorLang,
-    cdn:     '/assets/vditor',
-    value:   cleanBody,
-    cache:   { enable: false },
-    toolbar: [
-      'headings', 'bold', 'italic', 'strike', '|',
-      'line', 'quote', 'list', 'ordered-list', 'check', '|',
-      'table', 'link', 'upload', '|',
-      'code', 'inline-code', '|',
-      'undo', 'redo', '|',
-      'edit-mode', 'preview', 'fullscreen',
-    ],
-    after: function() {
-      if (!stemEl.value) titleEl.focus();
-    },
-  });
-} catch (e) {
-  document.getElementById('editor').textContent = 'Editor error: ' + e;
-  console.error('Vditor init failed:', e);
+
+function initEditor(i18n) {
+  try {
+    var opts = {
+      height:  520,
+      mode:    'ir',
+      cdn:     '/assets/vditor',
+      value:   cleanBody,
+      cache:   { enable: false },
+      toolbar: [
+        'headings', 'bold', 'italic', 'strike', '|',
+        'line', 'quote', 'list', 'ordered-list', 'check', '|',
+        'table', 'link', 'upload', '|',
+        'code', 'inline-code', '|',
+        'undo', 'redo', '|',
+        'edit-mode', 'preview', 'fullscreen',
+      ],
+      after: function() {
+        if (!stemEl.value) titleEl.focus();
+      },
+    };
+    if (i18n) {
+      opts.i18n = i18n;
+    } else {
+      opts.lang = 'en_US';   // fallback if i18n file missing
+    }
+    editor = new Vditor('editor', opts);
+  } catch (e) {
+    document.getElementById('editor').textContent = 'Editor error: ' + e;
+    console.error('Vditor init failed:', e);
+  }
 }
+
+// Dynamically load the i18n script (sets window.VditorI18n), then init.
+(function () {
+  var s = document.createElement('script');
+  s.src = '/assets/vditor/dist/js/i18n/' + editorLang + '.js';
+  s.onload  = function () { initEditor(window.VditorI18n); };
+  s.onerror = function () { initEditor(null); };
+  document.head.appendChild(s);
+}());
 
 // ── Status ────────────────────────────────────────────────────────────────────
 var statusTimer;
