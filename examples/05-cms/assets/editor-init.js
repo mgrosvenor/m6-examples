@@ -120,7 +120,8 @@ var editor;
 try {
   editor = new Vditor('editor', {
     height:  520,
-    mode:    'wysiwyg',
+    mode:    'ir',
+    lang:    'en_US',
     cdn:     '/assets/vditor',
     value:   cleanBody,
     cache:   { enable: false },
