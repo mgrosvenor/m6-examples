@@ -14,6 +14,8 @@ fn main() -> Result<()> {
         .route_patch("/api/drafts/{stem}",   handle_update_draft)
         .route_post("/api/publish/{stem}",   handle_publish)
         .route_post("/api/unpublish/{stem}", handle_unpublish)
+        .route_delete("/api/drafts/{stem}",  handle_delete_draft)
+        .route_delete("/api/posts/{stem}",   handle_delete_post)
         .run()
 }
 
@@ -180,6 +182,26 @@ fn update_index(req: &Request) -> Result<()> {
     });
 
     req.write_json_atomic("data/posts.json", &json!({ "documents": all }))
+}
+
+fn handle_delete_draft(req: &Request) -> Result<Response> {
+    let stem = req["stem"].as_str().ok_or(Error::NotFound)?;
+    let path = req.site_path(&format!("content/drafts/{}.json", stem));
+    if path.exists() {
+        fs::remove_file(&path).map_err(|e| Error::Other(e.into()))?;
+    }
+    Ok(Response::json(json!({"deleted": true})))
+}
+
+fn handle_delete_post(req: &Request) -> Result<Response> {
+    let stem = req["stem"].as_str().ok_or(Error::NotFound)?;
+    let path = req.site_path(&format!("content/posts/{}.json", stem));
+    if path.exists() {
+        fs::remove_file(&path).map_err(|e| Error::Other(e.into()))?;
+        update_index(req)?;
+        req.touch("site.toml")?;
+    }
+    Ok(Response::json(json!({"deleted": true})))
 }
 
 /// Strip YAML (`---`) or TOML (`+++`) frontmatter from a markdown file,

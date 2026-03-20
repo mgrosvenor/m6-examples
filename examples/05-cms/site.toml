@@ -115,3 +115,8 @@ require = "group:editors"
 path    = "/api/unpublish/{stem}"
 backend = "render-cms"
 require = "group:editors"
+
+[[route]]
+path    = "/api/posts/{stem}"
+backend = "render-cms"
+require = "group:editors"

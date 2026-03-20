@@ -106,6 +106,15 @@ if (!dateEl.value    && meta.date)    dateEl.value    = meta.date;
 if (!coverEl.value   && meta.cover)   coverEl.value   = meta.cover;
 addTag(initTags || meta.tags || '');
 
+// Default date to today for new posts
+if (!dateEl.value) {
+  var now = new Date();
+  var yyyy = now.getFullYear();
+  var mm   = String(now.getMonth() + 1).padStart(2, '0');
+  var dd   = String(now.getDate()).padStart(2, '0');
+  dateEl.value = yyyy + '-' + mm + '-' + dd;
+}
+
 // ── Vditor WYSIWYG editor ─────────────────────────────────────────────────────
 var editor;
 try {

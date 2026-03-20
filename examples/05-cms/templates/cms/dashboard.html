@@ -50,7 +50,10 @@
       <tr>
         <td class="col-title"><a href="/cms/edit/{{ d.stem }}">{{ d.title | default(value=d.stem) }}</a></td>
         <td class="col-date">{{ d.date | default(value="—") }}</td>
-        <td class="col-act"><a href="/cms/edit/{{ d.stem }}">Edit</a></td>
+        <td class="col-act">
+          <a href="/cms/edit/{{ d.stem }}">Edit</a>
+          <a href="#" class="del" onclick="deleteDraft('{{ d.stem }}', this); return false;">Delete</a>
+        </td>
       </tr>
     {% endfor %}
     </tbody>
@@ -75,6 +78,8 @@
         <td class="col-act">
           <a href="/blog/{{ p.stem }}">View</a>
           <a href="/cms/edit/{{ p.stem }}">Edit</a>
+          <a href="#" onclick="unpublishPost('{{ p.stem }}', this); return false;">Unpublish</a>
+          <a href="#" class="del" onclick="deletePost('{{ p.stem }}', this); return false;">Delete</a>
         </td>
       </tr>
     {% endfor %}
@@ -83,5 +88,26 @@
 {% else %}
   <p class="empty">No published posts.</p>
 {% endif %}
+
+<script>
+async function deleteDraft(stem, el) {
+  if (!confirm('Delete draft "' + stem + '"?')) return;
+  var r = await fetch('/api/drafts/' + stem, { method: 'DELETE' });
+  if (r.ok) el.closest('tr').remove();
+  else alert('Delete failed: ' + r.status);
+}
+async function deletePost(stem, el) {
+  if (!confirm('Permanently delete "' + stem + '"?')) return;
+  var r = await fetch('/api/posts/' + stem, { method: 'DELETE' });
+  if (r.ok) el.closest('tr').remove();
+  else alert('Delete failed: ' + r.status);
+}
+async function unpublishPost(stem, el) {
+  if (!confirm('Send "' + stem + '" back to drafts?')) return;
+  var r = await fetch('/api/unpublish/' + stem, { method: 'POST' });
+  if (r.ok) location.reload();
+  else alert('Unpublish failed: ' + r.status);
+}
+</script>
 
 {% endblock %}

@@ -165,6 +165,11 @@ require = "group:editors"
 path    = "/api/unpublish/{stem}"
 backend = "render-cms"
 require = "group:editors"
+
+[[route]]
+path    = "/api/posts/{stem}"
+backend = "render-cms"
+require = "group:editors"
 ```
 
 `[[route_group]]` with `content/posts/*.json` handles routing for individual posts. New post files become routable when m6-http reloads after `site.toml` is touched on publish.
@@ -198,6 +203,8 @@ fn main() -> Result<()> {
         .route_patch("/api/drafts/{stem}",   handle_update_draft)
         .route_post("/api/publish/{stem}",   handle_publish)
         .route_post("/api/unpublish/{stem}", handle_unpublish)
+        .route_delete("/api/drafts/{stem}",  handle_delete_draft)
+        .route_delete("/api/posts/{stem}",   handle_delete_post)
         .run()
 }
 
@@ -282,16 +289,29 @@ fn handle_unpublish(req: &Request) -> Result<Response> {
 }
 ```
 
+## CMS API
+
+| Method | Path | Action |
+|---|---|---|
+| `POST` | `/api/drafts` | Create draft → returns `{"stem":"..."}` |
+| `PATCH` | `/api/drafts/{stem}` | Update draft fields |
+| `DELETE` | `/api/drafts/{stem}` | Delete draft permanently |
+| `POST` | `/api/publish/{stem}` | Publish draft → moves to posts, touches site.toml |
+| `POST` | `/api/unpublish/{stem}` | Move published post back to drafts |
+| `DELETE` | `/api/posts/{stem}` | Delete published post permanently |
+
+The dashboard shows **Edit / Delete** for drafts and **View / Edit / Unpublish / Delete** for published posts. The editor defaults the date field to today for new posts.
+
 ## The publish flow
 
 1. Editor saves draft → `POST /api/drafts` or `PATCH /api/drafts/{stem}` writes `content/drafts/{stem}.json`
 2. Editor clicks **Publish** → `POST /api/publish/{stem}`:
-   - render-cms writes `content/posts/{stem}.json` — inotify fires, m6-http evicts `/blog/{stem}` from cache
-   - render-cms writes updated `content/posts/_index.json` — inotify fires, m6-http evicts `/blog`
-   - render-cms touches `site.toml` — m6-http reloads route table, re-expands `[[route_group]]` glob, `/blog/{stem}` becomes live
+   - render-cms renders markdown → HTML, writes `content/posts/{stem}.json`
+   - render-cms rebuilds `data/posts.json` index
+   - render-cms touches `site.toml` — m6-http reloads routes, `/blog/{stem}` becomes live
    - render-cms deletes `content/drafts/{stem}.json`
 3. Browser redirects to `/blog/{stem}`
-4. m6-http: route now live, cache miss → m6-html reads JSON, renders → m6-http caches
+4. m6-http: route now live, cache miss → m6-html renders → m6-http caches
 5. Every subsequent request to `/blog/{stem}`: cache hit — RAM only
 
 <pre class="mermaid">

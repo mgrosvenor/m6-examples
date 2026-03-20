@@ -5,6 +5,13 @@ M6="${M6:-$(cd "$SITE/../../../m6" && pwd)}"
 EXAMPLES="${EXAMPLES:-$(cd "$SITE/../.." && pwd)}"
 export PATH="$M6/target/release:$PATH"
 
+NO_OPEN=0
+for arg in "$@"; do
+    [[ "$arg" == "--no-open" ]] && NO_OPEN=1
+done
+# Suppress browser launch when running non-interactively (CI, cargo test, etc.)
+[[ -t 1 ]] || NO_OPEN=1
+
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RESET='\033[0m'
 info() { echo -e "${YELLOW}----${RESET} $1"; }
 
@@ -134,7 +141,7 @@ if [[ "$READY" != "true" ]]; then
     exit 1
 fi
 
-open "https://localhost:8443/" 2>/dev/null || true
+[[ $NO_OPEN -eq 0 ]] && open "https://localhost:8443/" 2>/dev/null || true
 
 echo ""
 echo -e "${GREEN}Stack is running.${RESET}  Press Ctrl-C to stop."
