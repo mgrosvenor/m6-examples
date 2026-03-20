@@ -106,6 +106,13 @@
   <a href="/cms" class="btn btn-ghost">← Dashboard</a>
   <div class="spacer"></div>
   <span class="ed-status" id="status"></span>
+  <select id="ed-lang" onchange="setEditorLang(this.value)" title="Editor language"
+    style="font-size:0.78rem;padding:0.2rem 0.4rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--text);cursor:pointer;">
+    <option value="en_US">EN</option>
+    <option value="zh_CN">中文</option>
+    <option value="ja_JP">日本語</option>
+    <option value="ko_KR">한국어</option>
+  </select>
   <button type="button" class="btn btn-ghost"   onclick="save()">Save</button>
   <button type="button" class="btn btn-publish" onclick="publish()">Publish</button>
   {% if stem and not new %}

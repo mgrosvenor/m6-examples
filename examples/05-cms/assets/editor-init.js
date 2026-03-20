@@ -115,13 +115,27 @@ if (!dateEl.value) {
   dateEl.value = yyyy + '-' + mm + '-' + dd;
 }
 
+// ── Language preference ───────────────────────────────────────────────────────
+var VALID_LANGS = ['en_US', 'zh_CN', 'ja_JP', 'ko_KR'];
+var editorLang = localStorage.getItem('cms_editor_lang') || 'en_US';
+if (!VALID_LANGS.includes(editorLang)) editorLang = 'en_US';
+
+var langEl = document.getElementById('ed-lang');
+if (langEl) langEl.value = editorLang;
+
+function setEditorLang(lang) {
+  if (!VALID_LANGS.includes(lang)) return;
+  localStorage.setItem('cms_editor_lang', lang);
+  location.reload();
+}
+
 // ── Vditor WYSIWYG editor ─────────────────────────────────────────────────────
 var editor;
 try {
   editor = new Vditor('editor', {
     height:  520,
     mode:    'ir',
-    lang:    'en_US',
+    lang:    editorLang,
     cdn:     '/assets/vditor',
     value:   cleanBody,
     cache:   { enable: false },
