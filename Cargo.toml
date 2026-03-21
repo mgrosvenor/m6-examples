@@ -4,6 +4,7 @@ members = [
     "examples/04-auth/render-contact",
     "examples/05-cms/render-cms",
     "examples/07-dev-to-production/render-cms",
+    "examples/09-global-deployment/integration-test",
 ]
 resolver = "2"
 

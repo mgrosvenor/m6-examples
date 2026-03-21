@@ -1,0 +1,11 @@
+# Sydney — system config (production)
+# One m6-http instance handles both the public TLS edge and the H2C backbone.
+#   bind     — public HTTPS on all interfaces for end users and Oceania GeoDNS target
+#   h2c_bind — cleartext HTTP/2 on the WireGuard interface for cache nodes only
+#              (WireGuard provides encryption; TLS would be redundant)
+
+[server]
+bind     = "0.0.0.0:443"
+tls_cert = "/etc/letsencrypt/live/syd.example.com/fullchain.pem"
+tls_key  = "/etc/letsencrypt/live/syd.example.com/privkey.pem"
+h2c_bind = "10.0.0.1:80"

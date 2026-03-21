@@ -1,6 +1,12 @@
 # Cache site config — local dev
 # Used by all 5 cache node instances (ports 9002–9006).
 # All requests are proxied upstream to the local origin H2C instance on port 9000.
+#
+# Cache nodes do not enforce auth themselves — they proxy auth headers through
+# to the origin, which validates them. This is safe because:
+#   - Cache nodes are on a private WireGuard network (production)
+#   - CMS routes are cache = "no-store", always forwarded to origin
+#   - The origin is the only place that checks JWTs and writes state
 
 [site]
 name   = "My Blog"
@@ -67,52 +73,45 @@ backend = "origin"
 path    = "/auth/refresh"
 backend = "origin"
 
-# ── CMS — never cached ─────────────────────────────────────────────────────────
+# ── CMS — always forwarded to origin, never cached ────────────────────────────
+# Auth is enforced by the origin. Cache nodes pass all headers through.
 
 [[route]]
-path      = "/cms"
-backend   = "origin"
-require   = "group:editors"
-cache     = "no-store"
+path    = "/cms"
+backend = "origin"
+cache   = "no-store"
 
 [[route]]
-path      = "/cms/edit/{stem}"
-backend   = "origin"
-require   = "group:editors"
-cache     = "no-store"
+path    = "/cms/edit/{stem}"
+backend = "origin"
+cache   = "no-store"
 
 [[route]]
-path      = "/cms/new"
-backend   = "origin"
-require   = "group:editors"
-cache     = "no-store"
+path    = "/cms/new"
+backend = "origin"
+cache   = "no-store"
 
 [[route]]
-path      = "/api/drafts"
-backend   = "origin"
-require   = "group:editors"
-cache     = "no-store"
+path    = "/api/drafts"
+backend = "origin"
+cache   = "no-store"
 
 [[route]]
-path      = "/api/drafts/{stem}"
-backend   = "origin"
-require   = "group:editors"
-cache     = "no-store"
+path    = "/api/drafts/{stem}"
+backend = "origin"
+cache   = "no-store"
 
 [[route]]
-path      = "/api/publish/{stem}"
-backend   = "origin"
-require   = "group:editors"
-cache     = "no-store"
+path    = "/api/publish/{stem}"
+backend = "origin"
+cache   = "no-store"
 
 [[route]]
-path      = "/api/unpublish/{stem}"
-backend   = "origin"
-require   = "group:editors"
-cache     = "no-store"
+path    = "/api/unpublish/{stem}"
+backend = "origin"
+cache   = "no-store"
 
 [[route]]
-path      = "/api/posts/{stem}"
-backend   = "origin"
-require   = "group:editors"
-cache     = "no-store"
+path    = "/api/posts/{stem}"
+backend = "origin"
+cache   = "no-store"

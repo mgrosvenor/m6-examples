@@ -1045,6 +1045,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "integration-test"
+version = "0.1.0"
+dependencies = [
+ "rcgen",
+ "rustls",
+ "rustls-pemfile",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "itertools"
 version = "0.10.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"

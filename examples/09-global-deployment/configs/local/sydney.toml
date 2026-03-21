@@ -1,0 +1,9 @@
+# Sydney — system config (local dev)
+# bind     — public HTTPS on loopback (direct access + CMS)
+# h2c_bind — H2C on loopback for the 5 simulated cache nodes
+
+[server]
+bind     = "127.0.0.1:9001"
+tls_cert = "../certs/local.pem"
+tls_key  = "../certs/local-key.pem"
+h2c_bind = "127.0.0.1:9000"

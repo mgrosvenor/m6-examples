@@ -33,11 +33,9 @@ graph TD
     DNS -->|Asia| SIN
 
     subgraph "Sydney origin"
-        SYD_PUB["m6-http\n0.0.0.0:443 TLS"]
-        SYD_H2C["m6-http\n10.0.0.1:80 H2C"]
+        SYD["m6-http\nbind=0.0.0.0:443 TLS\nh2c_bind=10.0.0.1:80"]
         BACKENDS["m6-html · m6-file\nm6-auth · render-cms"]
-        SYD_PUB --> BACKENDS
-        SYD_H2C --> BACKENDS
+        SYD --> BACKENDS
     end
 
     subgraph "WireGuard 10.0.0.0/24"
@@ -48,11 +46,11 @@ graph TD
         SIN["Singapore\n10.0.0.6"]
     end
 
-    SF  -->|H2C| SYD_H2C
-    NYC -->|H2C| SYD_H2C
-    CHI -->|H2C| SYD_H2C
-    LON -->|H2C| SYD_H2C
-    SIN -->|H2C| SYD_H2C
+    SF  -->|H2C| SYD
+    NYC -->|H2C| SYD
+    CHI -->|H2C| SYD
+    LON -->|H2C| SYD
+    SIN -->|H2C| SYD
 </pre>
 
 One **origin** in Sydney runs all backend services. Five **cache nodes** (SF, NYC, Chicago, London, Singapore) each run a single `m6-http` instance that proxies everything upstream.
@@ -73,25 +71,22 @@ H2C on WireGuard gives you HTTP/2 multiplexing (multiple in-flight requests per 
 
 ### Sydney origin
 
-Two m6-http instances share the same backend Unix sockets:
+One m6-http instance handles both the public edge and the H2C backbone via two fields in the system config:
 
-**`configs/sydney-public.toml`** — TLS on `0.0.0.0:443`, for Oceania users and direct access:
+**`configs/sydney.toml`:**
 
 ```toml
 [server]
 bind     = "0.0.0.0:443"
 tls_cert = "/etc/letsencrypt/live/syd.example.com/fullchain.pem"
 tls_key  = "/etc/letsencrypt/live/syd.example.com/privkey.pem"
+h2c_bind = "10.0.0.1:80"
 ```
 
-**`configs/sydney-h2c.toml`** — H2C on `10.0.0.1:80`, only reachable over WireGuard:
+- `bind` — public HTTPS on all interfaces; served to end users and Oceania GeoDNS traffic
+- `h2c_bind` — cleartext HTTP/2 on the WireGuard interface, only reachable from cache nodes
 
-```toml
-[server]
-bind = "10.0.0.1:80"
-```
-
-Both use `configs/origin-site.toml` as the site config. They share `/run/m6/*.sock` Unix sockets. Requests from cache nodes arrive at `sydney-h2c`; Oceania users hit `sydney-public` directly.
+Both listeners share the same site config and backend Unix sockets in `/run/m6/*.sock`.
 
 ### Cache nodes
 
@@ -173,23 +168,17 @@ PersistentKeepalive = 25
 
 Two units on Sydney, one on each cache node:
 
-**Origin (two units):**
+**Origin (one unit — both listeners):**
 
 ```ini
-# m6-http-origin-public.service
+# m6-http-origin.service
 [Service]
 ExecStart=/usr/local/bin/m6-http \
     /var/www/my-blog \
-    /etc/m6/sydney-public.toml
+    /etc/m6/sydney.toml
 ```
 
-```ini
-# m6-http-origin-h2c.service
-[Service]
-ExecStart=/usr/local/bin/m6-http \
-    /var/www/my-blog \
-    /etc/m6/sydney-h2c.toml
-```
+`sydney.toml` has both `bind` (TLS) and `h2c_bind` (WireGuard backbone) — one process, two listening sockets.
 
 **Cache nodes (one unit, parameterised via EnvironmentFile):**
 
@@ -295,15 +284,15 @@ This starts:
 
 | Instance | Address | Role |
 |---|---|---|
-| Origin H2C | http://127.0.0.1:9000 | Cache backbone (internal only) |
-| Origin public | https://127.0.0.1:9001 | Direct user access + CMS |
+| Origin (Sydney) | https://127.0.0.1:9001 | Public TLS — direct access + CMS |
+| Origin H2C backbone | http://127.0.0.1:9000 | Cache-node backbone (internal) |
 | Cache SF | https://127.0.0.1:9002 | San Francisco proxy |
 | Cache NYC | https://127.0.0.1:9003 | New York proxy |
 | Cache Chicago | https://127.0.0.1:9004 | Chicago proxy |
 | Cache London | https://127.0.0.1:9005 | London proxy |
 | Cache Singapore | https://127.0.0.1:9006 | Singapore proxy |
 
-All five cache instances proxy back to `127.0.0.1:9000` over plain H2C (mirroring how they would talk to Sydney over WireGuard in production). You can hit any of the five TLS ports and get the same blog, served from the same origin.
+One m6-http process on the origin handles both listeners (`bind` for TLS, `h2c_bind` for H2C). All five cache instances proxy back to `127.0.0.1:9000` over plain H2C (mirroring production WireGuard). You can hit any of the five TLS ports and get the same blog served from the same origin.
 
 TLS uses a `mkcert` self-signed cert generated on first run. The CMS is available at `https://127.0.0.1:9001/cms` (login: admin / admin).
 

@@ -30,11 +30,9 @@ if [ ! -f /etc/m6/auth.pem ]; then
     chown m6:m6 /etc/m6/auth.pem /etc/m6/auth.pub
 fi
 
-# System configs
-install -m 640 -o root -g m6 configs/sydney-public.toml /etc/m6/sydney-public.toml
-install -m 640 -o root -g m6 configs/sydney-h2c.toml   /etc/m6/sydney-h2c.toml
-# Patch domain into configs
-sed -i "s/example.com/$DOMAIN/g" /etc/m6/sydney-public.toml
+# System config — one instance handles both public TLS and H2C backbone
+install -m 640 -o root -g m6 configs/sydney.toml /etc/m6/sydney.toml
+sed -i "s/example.com/$DOMAIN/g" /etc/m6/sydney.toml
 
 echo "=== WireGuard ==="
 install -m 600 wireguard/sydney-wg0.conf /etc/wireguard/wg0.conf
@@ -59,8 +57,7 @@ HOOK
 chmod +x /etc/letsencrypt/renewal-hooks/deploy/m6-http-reload.sh
 
 echo "=== Installing systemd units ==="
-install -m 644 systemd/m6-http-origin-public.service /etc/systemd/system/
-install -m 644 systemd/m6-http-origin-h2c.service    /etc/systemd/system/
+install -m 644 systemd/m6-http-origin.service /etc/systemd/system/
 # (Install m6-html, m6-file, m6-auth, render-cms units from example 06/07)
 systemctl daemon-reload
 
@@ -70,4 +67,4 @@ echo "  1. Copy WireGuard keys into /etc/wireguard/wg0.conf (replace placeholder
 echo "  2. Deploy site content: ./deploy.sh user@$DOMAIN"
 echo "  3. Start services:"
 echo "       systemctl enable --now m6-html m6-file m6-auth render-cms"
-echo "       systemctl enable --now m6-http-origin-public m6-http-origin-h2c"
+echo "       systemctl enable --now m6-http-origin"
