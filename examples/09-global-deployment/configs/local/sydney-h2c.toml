@@ -1,6 +1,0 @@
-# Sydney — H2C backbone (local dev)
-# Binds on loopback. Cache nodes connect to this on port 9000 over plain H2C.
-# No TLS — all traffic stays on loopback.
-
-[server]
-bind = "127.0.0.1:9000"

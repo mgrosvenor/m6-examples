@@ -20,6 +20,9 @@ certs/                # local dev TLS certs (mkcert)
 target/               # Rust build output
 bin/                  # deployed renderer binaries (push with --binary flag)
 
+# ── Deploy config (contains server addresses) ─────────────────────────────────
+deploy.toml           # copy of deploy.toml.example with real addresses
+
 # ── Dev scratch ────────────────────────────────────────────────────────────────
 .DS_Store
 *.swp

@@ -1,8 +1,0 @@
-# Sydney — public face (local dev)
-# Serves users on loopback port 9001 with a mkcert self-signed cert.
-# Generate with: mkcert 127.0.0.1 localhost
-
-[server]
-bind     = "127.0.0.1:9001"
-tls_cert = "../certs/local.pem"
-tls_key  = "../certs/local-key.pem"
