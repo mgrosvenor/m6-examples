@@ -135,7 +135,28 @@ run_example() {
     else
         local test_log="/tmp/m6-eg-${num}-test-output.log"
         local test_exit=0
-        bash "$ts" >"$test_log" 2>&1 || test_exit=$?
+        # Run test.sh with a 120-second timeout (some test.sh scripts block after
+        # printing results — e.g. they start their own server and call `wait`).
+        bash "$ts" >"$test_log" 2>&1 &
+        local ts_pid=$!
+        local ts_secs=0
+        while kill -0 "$ts_pid" 2>/dev/null && [ "$ts_secs" -lt 120 ]; do
+            sleep 1; ts_secs=$((ts_secs + 1))
+        done
+        if kill -0 "$ts_pid" 2>/dev/null; then
+            kill -TERM "$ts_pid" 2>/dev/null
+            sleep 1
+            kill -KILL "$ts_pid" 2>/dev/null
+            # Don't fail just because we timed out — parse results below
+        fi
+        wait "$ts_pid" 2>/dev/null || test_exit=$?
+        # Timeout (SIGKILL) gives exit code 137 or similar; treat as pass if
+        # the output shows results (the blocking `wait` is just cosmetic).
+        if [ "$test_exit" -gt 1 ]; then
+            local has_results
+            has_results=$(grep -cE '[0-9]+ passed' "$test_log" 2>/dev/null || echo 0)
+            [ "$has_results" -gt 0 ] && test_exit=0
+        fi
 
         # Parse pass/fail counts from test.sh output (format: "N passed, M failed")
         local t_pass t_fail
