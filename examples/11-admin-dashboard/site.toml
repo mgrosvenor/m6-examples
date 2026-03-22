@@ -1,0 +1,29 @@
+# example 11 — admin dashboard
+# All /api/admin/* routes are protected by "role:admin".
+
+[server]
+bind        = "127.0.0.1:8444"
+tls_cert    = "../../localhost.pem"
+tls_key     = "../../localhost-key.pem"
+log_file    = "/tmp/m6/m6-http-admin.log"
+log_level   = "info"
+error_mode  = "json"
+
+[[backend]]
+name    = "render-admin"
+socket  = "/tmp/m6/render-admin.sock"
+
+[[backend]]
+name    = "auth"
+socket  = "/tmp/m6/m6-auth.sock"
+
+[[route]]
+path    = "/api/admin/*"
+backend = "render-admin"
+require = "role:admin"
+cache   = "no-store"
+
+[[route]]
+path    = "/auth/*"
+backend = "auth"
+cache   = "no-store"

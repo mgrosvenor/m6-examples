@@ -1,0 +1,25 @@
+[package]
+name    = "render-admin"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "render_admin"
+path = "src/lib.rs"
+
+[[bin]]
+name = "render-admin"
+path = "src/main.rs"
+
+[dependencies]
+m6-render   = { path = "../../../../m6/m6-render" }
+sysinfo     = "0.31"
+serde_json  = "1"
+toml        = "0.8"
+anyhow      = "1"
+uuid        = { version = "1", features = ["v4"] }
+parking_lot = "0.12"
+filetime    = "0.2"
+
+[dev-dependencies]
+tempfile = "3"

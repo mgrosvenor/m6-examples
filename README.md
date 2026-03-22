@@ -1,6 +1,6 @@
 # m6-examples
 
-Seven examples for the [m6](https://github.com/mgrosvenor/m6) web server framework, each building on the last.
+Eleven examples for the [m6](https://github.com/mgrosvenor/m6) web server framework, each building on the last.
 
 ## Prerequisites
 
@@ -25,6 +25,10 @@ mkcert -install && mkcert localhost 127.0.0.1
 | 05 | `examples/05-cms/` | CMS blog: full system with publish flow, route invalidation |
 | 06 | `examples/06-systemd/` | Production: systemd units, hardening, scaling, deploy workflow |
 | 07 | `examples/07-dev-to-production/` | Dev → production: single site.toml, system config split |
+| 08 | `examples/08-logviewer/` | Log viewer: real-time log browsing, search, and filtering |
+| 09 | `examples/09-global-deployment/` | Global deployment: multi-region Vultr/Render configuration |
+| 10 | `examples/10-api-tokens/` | API tokens: long-lived Bearer JWTs for scripts and services |
+| 11 | `examples/11-admin-dashboard/` | Admin API: perf, system, bench, logs, config, service restart |
 
 ## Quick start
 
@@ -54,4 +58,5 @@ cargo build --release
 # Or build one
 cargo build --release -p render-contact
 cargo build --release -p render-cms
+cargo build --release -p render-admin
 ```
