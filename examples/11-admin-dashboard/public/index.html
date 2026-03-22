@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>m6 Admin</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:     #0f1117;
+      --panel:  #1a1d27;
+      --border: #2a2d3a;
+      --sk:     #252836;   /* skeleton base */
+      --sk-hi:  #2e3347;   /* skeleton shimmer */
+      --accent: #6c8aff;
+      --ok:     #4ade80;
+      --warn:   #facc15;
+      --err:    #f87171;
+      --text:   #e2e8f0;
+      --muted:  #64748b;
+      font-size: 14px;
+    }
+
+    body { background: var(--bg); color: var(--text); font-family: ui-monospace, monospace; }
+
+    /* ── skeleton shimmer ── */
+    @keyframes shimmer {
+      0%   { background-position: -400px 0; }
+      100% { background-position:  400px 0; }
+    }
+    .sk {
+      background: linear-gradient(90deg, var(--sk) 25%, var(--sk-hi) 50%, var(--sk) 75%);
+      background-size: 800px 100%;
+      animation: shimmer 1.4s infinite linear;
+      border-radius: 4px;
+    }
+
+    /* ── nav ── */
+    nav {
+      display: flex; align-items: center; gap: 0;
+      border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; background: var(--panel); z-index: 10;
+    }
+    nav button {
+      background: none; border: none; color: var(--muted);
+      padding: .75rem 1.4rem; cursor: pointer; font: inherit;
+      border-bottom: 2px solid transparent; transition: color .15s;
+    }
+    nav button.active  { color: var(--accent); border-bottom-color: var(--accent); }
+    nav button:hover:not(.active) { color: var(--text); }
+    #refresh-label { font-size: .72rem; color: var(--muted); margin-left: auto; padding-right: 1rem; }
+
+    /* ── layout ── */
+    main { max-width: 960px; margin: 0 auto; padding: 1.5rem 1rem; }
+    .tab  { display: none; }
+    .tab.active { display: block; }
+    h2 {
+      font-size: .72rem; color: var(--muted); margin-bottom: 1rem;
+      letter-spacing: .06em; text-transform: uppercase;
+    }
+
+    /* ── metric cards ── */
+    .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: .75rem; margin-bottom: 1.5rem; }
+    .card  { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 1rem; }
+    .card .label { font-size: .72rem; color: var(--muted); margin-bottom: .5rem; }
+    .card .value { font-size: 1.6rem; font-weight: 700; line-height: 1; }
+    .card .unit  { font-size: .72rem; color: var(--muted); margin-left: .2rem; }
+    /* skeleton value block */
+    .card .sk-val { height: 1.8rem; width: 70%; margin-top: .25rem; }
+
+    /* ── table ── */
+    .table-wrap { overflow: auto; max-height: 340px; border: 1px solid var(--border); border-radius: 6px; }
+    table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+    th { position: sticky; top: 0; background: var(--panel); text-align: left; color: var(--muted); padding: .5rem .75rem; border-bottom: 1px solid var(--border); }
+    td { padding: .4rem .75rem; border-bottom: 1px solid var(--border); }
+    /* skeleton rows */
+    .sk-row td { padding: .55rem .75rem; }
+    .sk-row .sk { height: .85rem; }
+
+    /* ── bar chart ── */
+    .bar-row   { display: flex; align-items: center; gap: .6rem; margin-bottom: .5rem; font-size: .82rem; }
+    .bar-label { width: 80px; color: var(--muted); flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .bar-track { flex: 1; background: var(--border); border-radius: 2px; height: 10px; overflow: hidden; }
+    .bar-fill  { height: 100%; border-radius: 2px; transition: width .5s ease; }
+    .bar-val   { width: 140px; text-align: right; color: var(--muted); font-size: .78rem; }
+
+    /* ── log / output pre ── */
+    pre {
+      background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+      padding: 1rem; overflow: auto; max-height: 480px;
+      font-size: .78rem; line-height: 1.5; white-space: pre-wrap; word-break: break-all;
+    }
+    /* skeleton log lines */
+    .sk-lines { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 1rem; }
+    .sk-line  { height: .75rem; margin-bottom: .55rem; }
+    .sk-line:nth-child(even) { width: 85%; }
+    .sk-line:nth-child(3n)   { width: 60%; }
+
+    /* ── buttons, inputs ── */
+    .row   { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin-bottom: 1rem; }
+    select, input[type=number] {
+      background: var(--panel); border: 1px solid var(--border); color: var(--text);
+      padding: .35rem .6rem; border-radius: 4px; font: inherit;
+    }
+    button.btn {
+      background: var(--accent); border: none; color: #fff;
+      padding: .35rem 1rem; border-radius: 4px; cursor: pointer; font: inherit;
+      transition: opacity .15s;
+    }
+    button.btn:hover    { opacity: .85; }
+    button.btn.secondary { background: var(--panel); border: 1px solid var(--border); color: var(--text); }
+    button.btn.danger    { background: #7f1d1d; color: var(--err); border: 1px solid #991b1b; }
+
+    .badge { display: inline-block; padding: .1rem .45rem; border-radius: 999px; font-size: .7rem; font-weight: 700; }
+    .badge.ok   { background: #166534; color: var(--ok); }
+    .badge.warn { background: #713f12; color: var(--warn); }
+    .badge.err  { background: #7f1d1d; color: var(--err); }
+    .badge.run  { background: #1e3a5f; color: var(--accent); }
+
+    /* ── config ── */
+    textarea {
+      width: 100%; min-height: 340px;
+      background: var(--panel); border: 1px solid var(--border); color: var(--text);
+      padding: .75rem; border-radius: 6px; font: inherit; font-size: .82rem;
+      line-height: 1.5; resize: vertical;
+    }
+    .msg { padding: .4rem .75rem; border-radius: 4px; font-size: .82rem; margin-bottom: .75rem; }
+    .msg.ok  { background: #166534; color: var(--ok); }
+    .msg.err { background: #7f1d1d; color: var(--err); }
+
+    /* ── login overlay ── */
+    #login-overlay {
+      position: fixed; inset: 0; background: var(--bg);
+      display: flex; align-items: center; justify-content: center; z-index: 100;
+    }
+    #login-box {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 8px; padding: 2rem; width: 320px;
+    }
+    #login-box h1 { font-size: 1.1rem; margin-bottom: 1.25rem; }
+    #login-box input {
+      display: block; width: 100%; margin-bottom: .75rem;
+      background: var(--bg); border: 1px solid var(--border); color: var(--text);
+      padding: .5rem .75rem; border-radius: 4px; font: inherit;
+    }
+    #login-err { color: var(--err); font-size: .8rem; margin-top: .5rem; min-height: 1.2em; }
+  </style>
+</head>
+<body>
+
+<!-- ── Login overlay ──────────────────────────────────────────────────────── -->
+<div id="login-overlay">
+  <div id="login-box">
+    <h1>m6 Admin</h1>
+    <input id="u" type="text"     placeholder="Username" autocomplete="username">
+    <input id="p" type="password" placeholder="Password" autocomplete="current-password">
+    <button class="btn" id="login-btn" style="width:100%">Sign in</button>
+    <div id="login-err"></div>
+  </div>
+</div>
+
+<!-- ── Nav ───────────────────────────────────────────────────────────────── -->
+<nav>
+  <button class="active" data-tab="perf">Perf</button>
+  <button data-tab="system">System</button>
+  <button data-tab="bench">Bench</button>
+  <button data-tab="logs">Logs</button>
+  <button data-tab="routes">Routes</button>
+  <button data-tab="config">Config</button>
+  <span id="refresh-label">auto-refresh 10 s</span>
+</nav>
+
+<main>
+
+<!-- ── Perf tab ───────────────────────────────────────────────────────────── -->
+<section class="tab active" id="tab-perf">
+  <h2>Server Performance</h2>
+
+  <!-- metric cards — skeletons shown until first AJAX response -->
+  <div class="cards">
+    <div class="card">
+      <div class="label">RPS avg</div>
+      <div class="value sk-target" id="p-rps-avg"><span class="sk sk-val"></span></div>
+    </div>
+    <div class="card">
+      <div class="label">RPS peak</div>
+      <div class="value sk-target" id="p-rps-peak"><span class="sk sk-val"></span></div>
+    </div>
+    <div class="card">
+      <div class="label">Latency p50</div>
+      <div class="value sk-target" id="p-p50"><span class="sk sk-val"></span></div>
+      <span class="unit">µs</span>
+    </div>
+    <div class="card">
+      <div class="label">Latency p99</div>
+      <div class="value sk-target" id="p-p99"><span class="sk sk-val"></span></div>
+      <span class="unit">µs</span>
+    </div>
+    <div class="card">
+      <div class="label">Cache hit rate</div>
+      <div class="value sk-target" id="p-cache"><span class="sk sk-val"></span></div>
+      <span class="unit">%</span>
+    </div>
+    <div class="card">
+      <div class="label">Backend errors</div>
+      <div class="value sk-target" id="p-berr"><span class="sk sk-val"></span></div>
+    </div>
+  </div>
+
+  <h2>History (last 60 intervals · 10 s each)</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>Time</th><th>RPS avg</th><th>RPS peak</th>
+        <th>p50 µs</th><th>p99 µs</th><th>Cache %</th><th>Errors</th>
+      </tr></thead>
+      <!-- skeleton rows shown before data arrives -->
+      <tbody id="perf-table">
+        <tr class="sk-row"><td><span class="sk" style="width:120px;display:block;height:.85rem"></span></td><td><span class="sk" style="width:40px;display:block;height:.85rem"></span></td><td><span class="sk" style="width:40px;display:block;height:.85rem"></span></td><td><span class="sk" style="width:50px;display:block;height:.85rem"></span></td><td><span class="sk" style="width:50px;display:block;height:.85rem"></span></td><td><span class="sk" style="width:40px;display:block;height:.85rem"></span></td><td><span class="sk" style="width:30px;display:block;height:.85rem"></span></td></tr>
+        <tr class="sk-row"><td><span class="sk" style="width:120px;display:block;height:.85rem"></span></td><td><span class="sk" style="width:35px;display:block;height:.85rem"></span></td><td><span class="sk" style="width:45px;display:block;height:.85rem"></span></td><td><span class="sk" style="width:50px;display:block;height:.85rem"></span></td><td><span class="sk" style="width:50px;display:block;height:.85rem"></span></td><td><span class="sk" style="width:40px;display:block;height:.85rem"></span></td><td><span class="sk" style="width:20px;display:block;height:.85rem"></span></td></tr>
+        <tr class="sk-row"><td><span class="sk" style="width:120px;display:block;height:.85rem"></span></td><td><span class="sk" style="width:42px;display:block;height:.85rem"></span></td><td><span class="sk" style="width:38px;display:block;height:.85rem"></span></td><td><span class="sk" style="width:50px;display:block;height:.85rem"></span></td><td><span class="sk" style="width:50px;display:block;height:.85rem"></span></td><td><span class="sk" style="width:40px;display:block;height:.85rem"></span></td><td><span class="sk" style="width:25px;display:block;height:.85rem"></span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ── System tab ─────────────────────────────────────────────────────────── -->
+<section class="tab" id="tab-system">
+  <h2>System</h2>
+  <div class="cards">
+    <div class="card"><div class="label">Uptime</div>
+      <div class="value sk-target" id="s-uptime"><span class="sk sk-val"></span></div></div>
+    <div class="card"><div class="label">CPU</div>
+      <div class="value sk-target" id="s-cpu"><span class="sk sk-val"></span></div><span class="unit">%</span></div>
+    <div class="card"><div class="label">RAM used</div>
+      <div class="value sk-target" id="s-ram"><span class="sk sk-val"></span></div></div>
+    <div class="card"><div class="label">RAM total</div>
+      <div class="value sk-target" id="s-ram-t"><span class="sk sk-val"></span></div></div>
+  </div>
+  <h2>Disks</h2>
+  <!-- skeleton disk bars -->
+  <div id="disk-bars">
+    <div class="bar-row"><span class="bar-label"><span class="sk" style="width:50px;display:inline-block;height:.8rem"></span></span><div class="bar-track"><div class="bar-fill sk" style="width:100%"></div></div><span class="bar-val"><span class="sk" style="width:90px;display:inline-block;height:.8rem"></span></span></div>
+    <div class="bar-row"><span class="bar-label"><span class="sk" style="width:50px;display:inline-block;height:.8rem"></span></span><div class="bar-track"><div class="bar-fill sk" style="width:100%"></div></div><span class="bar-val"><span class="sk" style="width:90px;display:inline-block;height:.8rem"></span></span></div>
+  </div>
+</section>
+
+<!-- ── Bench tab ──────────────────────────────────────────────────────────── -->
+<section class="tab" id="tab-bench">
+  <h2>Benchmark</h2>
+  <div class="row">
+    <select id="bench-target"><option disabled selected>Loading targets…</option></select>
+    <label>Duration&nbsp;<input type="number" id="bench-dur"  value="10" min="1" max="120" style="width:60px">&nbsp;s</label>
+    <label>Concurrency&nbsp;<input type="number" id="bench-conc" value="50" min="1" max="500" style="width:70px"></label>
+    <button class="btn" id="bench-run">Run</button>
+  </div>
+  <div id="bench-jobs"></div>
+</section>
+
+<!-- ── Logs tab ───────────────────────────────────────────────────────────── -->
+<section class="tab" id="tab-logs">
+  <h2>Log tail</h2>
+  <div class="row">
+    <label>Lines&nbsp;<input type="number" id="log-n" value="100" min="1" max="5000" style="width:70px"></label>
+    <button class="btn secondary" id="log-refresh">Refresh</button>
+    <span id="log-total" style="color:var(--muted);font-size:.78rem"></span>
+  </div>
+  <!-- skeleton log -->
+  <div id="log-pre-wrap">
+    <div class="sk-lines">
+      <div class="sk sk-line"></div><div class="sk sk-line"></div><div class="sk sk-line"></div>
+      <div class="sk sk-line"></div><div class="sk sk-line"></div><div class="sk sk-line"></div>
+      <div class="sk sk-line"></div><div class="sk sk-line"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Routes tab ────────────────────────────────────────────────────────── -->
+<section class="tab" id="tab-routes">
+  <h2>Route Stats</h2>
+  <!-- summary cards -->
+  <div class="cards">
+    <div class="card">
+      <div class="label">Sample requests</div>
+      <div class="value sk-target" id="rt-sample"><span class="sk sk-val"></span></div>
+    </div>
+    <div class="card">
+      <div class="label">Sample window</div>
+      <div class="value sk-target" id="rt-window"><span class="sk sk-val"></span></div>
+      <span class="unit">s</span>
+    </div>
+  </div>
+  <!-- routes table -->
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>Path</th>
+        <th>Requests</th>
+        <th>Cache hits</th>
+        <th>Misses</th>
+        <th>Hit rate</th>
+        <th>Avg latency</th>
+      </tr></thead>
+      <tbody id="routes-table">
+        <tr class="sk-row"><td><span class="sk" style="width:160px;display:block;height:.85rem"></span></td><td><span class="sk" style="width:50px;display:block;height:.85rem"></span></td><td><span class="sk" style="width:50px;display:block;height:.85rem"></span></td><td><span class="sk" style="width:50px;display:block;height:.85rem"></span></td><td><span class="sk" style="width:50px;display:block;height:.85rem"></span></td><td><span class="sk" style="width:60px;display:block;height:.85rem"></span></td></tr>
+        <tr class="sk-row"><td><span class="sk" style="width:120px;display:block;height:.85rem"></span></td><td><span class="sk" style="width:45px;display:block;height:.85rem"></span></td><td><span class="sk" style="width:45px;display:block;height:.85rem"></span></td><td><span class="sk" style="width:45px;display:block;height:.85rem"></span></td><td><span class="sk" style="width:50px;display:block;height:.85rem"></span></td><td><span class="sk" style="width:60px;display:block;height:.85rem"></span></td></tr>
+        <tr class="sk-row"><td><span class="sk" style="width:140px;display:block;height:.85rem"></span></td><td><span class="sk" style="width:40px;display:block;height:.85rem"></span></td><td><span class="sk" style="width:40px;display:block;height:.85rem"></span></td><td><span class="sk" style="width:40px;display:block;height:.85rem"></span></td><td><span class="sk" style="width:50px;display:block;height:.85rem"></span></td><td><span class="sk" style="width:60px;display:block;height:.85rem"></span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ── Config tab ─────────────────────────────────────────────────────────── -->
+<section class="tab" id="tab-config">
+  <h2>site.toml — live config</h2>
+  <div id="config-msg"></div>
+  <div class="row">
+    <button class="btn secondary" id="cfg-reload">Reload</button>
+    <button class="btn"           id="cfg-save">Save &amp; apply</button>
+    <button class="btn secondary" id="cfg-touch">Touch (reload only)</button>
+    <button class="btn danger"    id="cfg-flush">Flush cache</button>
+  </div>
+  <p style="font-size:.75rem;color:var(--muted);margin-bottom:.75rem">
+    JSON representation of site.toml. Save converts back to TOML and writes atomically.
+    Touch bumps the mtime so m6-http hot-reloads without changing content.
+  </p>
+  <!-- skeleton textarea -->
+  <div id="cfg-wrap">
+    <div class="sk-lines" style="min-height:200px">
+      <div class="sk sk-line" style="width:60%"></div>
+      <div class="sk sk-line" style="width:80%"></div>
+      <div class="sk sk-line" style="width:70%"></div>
+      <div class="sk sk-line" style="width:50%"></div>
+      <div class="sk sk-line" style="width:85%"></div>
+    </div>
+  </div>
+  <h2 style="margin-top:1.5rem">Services</h2>
+  <div id="services-list">
+    <div class="sk" style="height:.85rem;width:240px;margin-bottom:.5rem"></div>
+    <div class="sk" style="height:.85rem;width:200px"></div>
+  </div>
+</section>
+
+</main>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────────
+let token     = sessionStorage.getItem('m6-admin-token') || '';
+let pollTimer = null;
+let benchPollers = {};
+let activeTab = 'perf';
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+const $  = id => document.getElementById(id);
+const qs = s  => document.querySelector(s);
+
+const fmt = {
+  bytes(n) {
+    if (n == null) return '—';
+    const u = ['B','KB','MB','GB','TB'];
+    let i = 0; while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+    return n.toFixed(i ? 1 : 0) + '\u202f' + u[i];
+  },
+  uptime(s) {
+    if (s == null) return '—';
+    const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
+    return d ? `${d}d\u202f${h}h` : h ? `${h}h\u202f${m}m` : `${m}m`;
+  },
+  pct(n)  { return n == null ? '—' : n.toFixed(1); },
+  num(n)  { return n == null ? '—' : String(n); },
+  ts(ts)  { return ts ? ts.replace('T',' ').slice(0,19) : ''; },
+};
+
+// Replace a skeleton placeholder with real text content.
+function fill(id, text) {
+  const el = $(id);
+  if (!el) return;
+  el.textContent = text;
+}
+
+async function api(method, path, body) {
+  const opts = {
+    method,
+    headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+  };
+  if (body !== undefined) opts.body = JSON.stringify(body);
+  const res = await fetch('/api/admin' + path, opts);
+  if (res.status === 401) { logout(); throw new Error('Unauthorized'); }
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+function showMsg(el, text, kind) {
+  el.innerHTML = `<div class="msg ${kind}">${escHtml(text)}</div>`;
+  setTimeout(() => { el.innerHTML = ''; }, 5000);
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── Login / Logout ────────────────────────────────────────────────────────────
+function logout() {
+  token = '';
+  sessionStorage.removeItem('m6-admin-token');
+  $('login-overlay').style.display = 'flex';
+}
+
+async function doLogin() {
+  $('login-err').textContent = '';
+  const u = $('u').value.trim();
+  const p = $('p').value;
+  try {
+    const res = await fetch('/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `username=${encodeURIComponent(u)}&password=${encodeURIComponent(p)}`,
+    });
+    if (!res.ok) throw new Error('Invalid credentials');
+    const data = await res.json();
+    token = data.access_token || data.token || '';
+    if (!token) throw new Error('No token in response');
+    sessionStorage.setItem('m6-admin-token', token);
+    $('login-overlay').style.display = 'none';
+    startDashboard();
+  } catch(e) {
+    $('login-err').textContent = e.message;
+  }
+}
+
+$('login-btn').onclick = doLogin;
+[$('u'), $('p')].forEach(el => el.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); }));
+
+if (token) { $('login-overlay').style.display = 'none'; startDashboard(); }
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+document.querySelectorAll('nav button[data-tab]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('nav button[data-tab]').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+    activeTab = btn.dataset.tab;
+    $('tab-' + activeTab).classList.add('active');
+    refreshTab(activeTab);
+  });
+});
+
+// ── Auto-refresh ──────────────────────────────────────────────────────────────
+function startDashboard() {
+  refreshTab(activeTab);
+  clearInterval(pollTimer);
+  pollTimer = setInterval(() => refreshTab(activeTab), 10000);
+}
+
+function refreshTab(tab) {
+  if (tab === 'perf')   loadPerf();
+  if (tab === 'system') loadSystem();
+  if (tab === 'bench')  loadBenchTargets();
+  if (tab === 'logs')   loadLogs();
+  if (tab === 'routes') loadRoutes();
+  if (tab === 'config') loadConfig();
+}
+
+// ── Perf ──────────────────────────────────────────────────────────────────────
+async function loadPerf() {
+  try {
+    const d = await api('GET', '/perf');
+    const h = d.history || [];
+    const last = h[h.length - 1] || {};
+
+    fill('p-rps-avg',  fmt.num(last.rps_avg));
+    fill('p-rps-peak', fmt.num(last.rps_peak));
+    fill('p-p50',      fmt.num(last.latency_p50_us));
+    fill('p-p99',      fmt.num(last.latency_p99_us));
+    fill('p-cache',    last.cache_hit_rate != null ? (last.cache_hit_rate * 100).toFixed(1) : '—');
+    fill('p-berr',     fmt.num(last.backend_errors));
+
+    $('perf-table').innerHTML = h.length
+      ? h.slice().reverse().map(r => `<tr>
+          <td>${escHtml(fmt.ts(r.ts))}</td>
+          <td>${fmt.num(r.rps_avg)}</td>
+          <td>${fmt.num(r.rps_peak)}</td>
+          <td>${fmt.num(r.latency_p50_us)}</td>
+          <td>${fmt.num(r.latency_p99_us)}</td>
+          <td>${r.cache_hit_rate != null ? (r.cache_hit_rate * 100).toFixed(1) + '%' : '—'}</td>
+          <td>${fmt.num(r.backend_errors)}</td>
+        </tr>`).join('')
+      : '<tr><td colspan="7" style="color:var(--muted);padding:.75rem">No periodic-stats log entries yet</td></tr>';
+  } catch(e) { console.error('perf', e); }
+}
+
+// ── System ────────────────────────────────────────────────────────────────────
+async function loadSystem() {
+  try {
+    const d = await api('GET', '/system');
+    fill('s-uptime', fmt.uptime(d.uptime_secs));
+    fill('s-cpu',    fmt.pct(d.cpu_usage_pct));
+    fill('s-ram',    fmt.bytes(d.memory?.used_bytes));
+    fill('s-ram-t',  fmt.bytes(d.memory?.total_bytes));
+
+    $('disk-bars').innerHTML = (d.disks || []).map(disk => {
+      const pct = disk.used_pct ?? 0;
+      const colour = pct > 90 ? 'var(--err)' : pct > 75 ? 'var(--warn)' : 'var(--ok)';
+      return `<div class="bar-row">
+        <span class="bar-label" title="${escHtml(disk.mount)}">${escHtml(disk.mount)}</span>
+        <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${colour}"></div></div>
+        <span class="bar-val">${fmt.bytes(disk.used_bytes)} / ${fmt.bytes(disk.total_bytes)}</span>
+      </div>`;
+    }).join('') || '<p style="color:var(--muted);font-size:.85rem">No disks reported.</p>';
+  } catch(e) { console.error('system', e); }
+}
+
+// ── Bench ─────────────────────────────────────────────────────────────────────
+let benchTargets = [];
+
+async function loadBenchTargets() {
+  try {
+    const d = await api('GET', '/bench');
+    benchTargets = d.targets || [];
+    const sel = $('bench-target');
+    if (sel.dataset.loaded) return;
+    sel.dataset.loaded = '1';
+    sel.innerHTML = benchTargets.map(t =>
+      `<option value="${escHtml(t.id)}" data-addr="${escHtml(t.addr)}" data-proto="${escHtml(t.proto)}">${escHtml(t.label)}</option>`
+    ).join('') || '<option disabled>No targets found</option>';
+  } catch(e) { console.error('bench targets', e); }
+}
+
+$('bench-run').onclick = async () => {
+  const sel = $('bench-target');
+  const opt = sel.options[sel.selectedIndex];
+  if (!opt || !opt.dataset.addr) return;
+  const dur  = parseInt($('bench-dur').value, 10)  || 10;
+  const conc = parseInt($('bench-conc').value, 10) || 50;
+  try {
+    const res = await api('POST', '/bench', {
+      addr: opt.dataset.addr, proto: opt.dataset.proto,
+      duration_secs: dur, concurrency: conc,
+    });
+    addBenchJob(res.job_id, opt.textContent.trim());
+  } catch(e) { console.error('bench start', e); }
+};
+
+function addBenchJob(id, label) {
+  const div = document.createElement('div');
+  div.id = 'job-' + id;
+  div.style.marginBottom = '.75rem';
+  div.innerHTML = `<div class="row">
+    <span class="badge run" id="badge-${escHtml(id)}">running</span>
+    <strong>${escHtml(label)}</strong>
+    <span style="color:var(--muted);font-size:.75rem">${new Date().toLocaleTimeString()}</span>
+  </div>
+  <pre id="out-${escHtml(id)}"><span class="sk" style="display:block;height:.8rem;width:200px;margin-bottom:.4rem"></span><span class="sk" style="display:block;height:.8rem;width:300px"></span></pre>`;
+  $('bench-jobs').prepend(div);
+
+  benchPollers[id] = setInterval(async () => {
+    try {
+      const j = await api('GET', `/bench/${encodeURIComponent(id)}`);
+      const badge = $('badge-' + id);
+      const out   = $('out-'   + id);
+      if (!badge) return;
+      if (j.status !== 'running') {
+        badge.textContent = j.status;
+        badge.className   = j.status === 'done' ? 'badge ok' : 'badge err';
+        out.textContent   = j.output || '(no output)';
+        clearInterval(benchPollers[id]);
+        delete benchPollers[id];
+      }
+    } catch(e) { /* ignore transient errors */ }
+  }, 1000);
+}
+
+// ── Logs ──────────────────────────────────────────────────────────────────────
+async function loadLogs() {
+  const n = parseInt($('log-n').value, 10) || 100;
+  try {
+    const d = await api('GET', `/logs?n=${n}`);
+    const wrap = $('log-pre-wrap');
+    // Replace skeleton with real <pre> on first load.
+    if (!wrap.querySelector('pre')) {
+      wrap.innerHTML = '<pre id="log-pre"></pre>';
+    }
+    $('log-pre').textContent = (d.lines || []).join('\n') || '(no log lines)';
+    $('log-total').textContent = `${d.total_lines ?? 0} lines total`;
+  } catch(e) {
+    $('log-pre-wrap').innerHTML = `<pre style="color:var(--err)">Error: ${escHtml(e.message)}</pre>`;
+  }
+}
+
+$('log-refresh').onclick = loadLogs;
+
+// ── Routes ────────────────────────────────────────────────────────────────────
+async function loadRoutes() {
+  try {
+    const d = await api('GET', '/routes');
+    fill('rt-sample', fmt.num(d.sample_requests));
+    fill('rt-window', d.sample_window_secs != null ? fmt.num(d.sample_window_secs) : '—');
+
+    const routes = d.routes || [];
+    $('routes-table').innerHTML = routes.length
+      ? routes.map(r => {
+          const hitPct = r.hit_rate != null ? (r.hit_rate * 100).toFixed(1) + '%' : '—';
+          const lat    = r.avg_latency_us != null ? r.avg_latency_us + '\u202fµs' : '—';
+          const colour = r.hit_rate == null ? '' :
+                         r.hit_rate >= 0.9 ? 'color:var(--ok)' :
+                         r.hit_rate >= 0.6 ? 'color:var(--warn)' : 'color:var(--err)';
+          return `<tr>
+            <td>${escHtml(r.path)}</td>
+            <td>${fmt.num(r.requests)}</td>
+            <td>${fmt.num(r.cache_hits)}</td>
+            <td>${fmt.num(r.cache_misses)}</td>
+            <td style="${colour}">${hitPct}</td>
+            <td>${lat}</td>
+          </tr>`;
+        }).join('')
+      : '<tr><td colspan="6" style="color:var(--muted);padding:.75rem">No request-complete log entries yet</td></tr>';
+  } catch(e) { console.error('routes', e); }
+}
+
+// ── Config ────────────────────────────────────────────────────────────────────
+let cfgLoaded = false;
+
+async function loadConfig() {
+  try {
+    const d = await api('GET', '/config');
+    const wrap = $('cfg-wrap');
+    if (!cfgLoaded) {
+      wrap.innerHTML = '<textarea id="cfg-editor" spellcheck="false"></textarea>';
+      cfgLoaded = true;
+    }
+    $('cfg-editor').value = JSON.stringify(d.config, null, 2);
+
+    const svcs = Array.isArray(d.config?.services) ? d.config.services : [];
+    $('services-list').innerHTML = svcs.length
+      ? svcs.map(s => `<div class="row" style="margin-bottom:.4rem">
+          <span style="min-width:120px">${escHtml(s.name ?? '?')}</span>
+          <span style="color:var(--muted);font-size:.78rem">${escHtml(s.pid_file ?? '')}</span>
+          <button class="btn danger" onclick="restartService('${escHtml(s.name ?? '')}')">SIGTERM</button>
+        </div>`).join('')
+      : '<p style="color:var(--muted);font-size:.82rem">No services in config.</p>';
+  } catch(e) {
+    showMsg($('config-msg'), 'Load failed: ' + e.message, 'err');
+  }
+}
+
+$('cfg-reload').onclick = loadConfig;
+
+$('cfg-save').onclick = async () => {
+  const ta = $('cfg-editor');
+  if (!ta) return;
+  let parsed;
+  try { parsed = JSON.parse(ta.value); }
+  catch(e) { showMsg($('config-msg'), 'Invalid JSON: ' + e.message, 'err'); return; }
+  try {
+    await api('PUT', '/config', parsed);
+    showMsg($('config-msg'), 'Saved and applied.', 'ok');
+  } catch(e) { showMsg($('config-msg'), 'Save failed: ' + e.message, 'err'); }
+};
+
+$('cfg-touch').onclick = async () => {
+  try {
+    await api('POST', '/config/touch');
+    showMsg($('config-msg'), 'Touched — m6-http will hot-reload.', 'ok');
+  } catch(e) { showMsg($('config-msg'), 'Touch failed: ' + e.message, 'err'); }
+};
+
+$('cfg-flush').onclick = async () => {
+  if (!confirm('Flush cache? This touches site.toml and triggers a hot reload.')) return;
+  try {
+    await api('POST', '/cache/flush');
+    showMsg($('config-msg'), 'Cache flushed.', 'ok');
+  } catch(e) { showMsg($('config-msg'), 'Flush failed: ' + e.message, 'err'); }
+};
+
+async function restartService(name) {
+  if (!confirm(`Send SIGTERM to "${name}"?`)) return;
+  try {
+    const d = await api('POST', `/services/${encodeURIComponent(name)}/restart`);
+    if (d.ok) showMsg($('config-msg'), `${name} sent SIGTERM (PID ${d.pid}).`, 'ok');
+    else showMsg($('config-msg'), 'Restart error: ' + (d.error ?? 'unknown'), 'err');
+  } catch(e) { showMsg($('config-msg'), 'Restart error: ' + e.message, 'err'); }
+}
+</script>
+</body>
+</html>

@@ -9,7 +9,9 @@ use std::path::PathBuf;
 
 pub struct Global {
     /// m6-http JSON-lines log file to read perf/log data from.
-    log_file: PathBuf,
+    log_file:        PathBuf,
+    /// Number of "request complete" log entries to sample for route stats.
+    routes_sample:   usize,
     /// site.toml for the managed site (for config read/write/touch and bench targets).
     site_toml: PathBuf,
     /// Number of perf history entries to return.
@@ -68,6 +70,7 @@ fn init_global(cfg: &serde_json::Map<String, Value>) -> m6_render::Result<Global
 
     Ok(Global {
         log_file,
+        routes_sample: get_usize("routes_sample", 10_000),
         site_toml,
         perf_history: get_usize("perf_history", 60),
         log_tail_default: get_usize("log_tail_default", 100),
@@ -88,6 +91,15 @@ fn handle_perf(req: &Request, g: &Global) -> m6_render::Result<Response> {
         .and_then(|s| s.parse::<usize>().ok())
         .unwrap_or(g.perf_history);
     Ok(Response::json(perf::perf_blob(&g.log_file, n)))
+}
+
+fn handle_routes(_req: &Request, g: &Global) -> m6_render::Result<Response> {
+    let n = _req.dict()
+        .get("n")
+        .and_then(Value::as_str)
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(g.routes_sample);
+    Ok(Response::json(perf::routes_blob(&g.log_file, n)))
 }
 
 fn handle_system(_req: &Request, _g: &Global) -> m6_render::Result<Response> {
@@ -179,6 +191,8 @@ fn main() {
     App::with_global(init_global)
         // Performance tab: last N "periodic stats" entries from m6-http log
         .route_get("/api/admin/perf",           handle_perf)
+        // Routes tab: per-route request counts, cache hit rates, avg latency
+        .route_get("/api/admin/routes",         handle_routes)
         // System tab: CPU, RAM, disk, uptime
         .route_get("/api/admin/system",          handle_system)
         // Bench tab: list targets

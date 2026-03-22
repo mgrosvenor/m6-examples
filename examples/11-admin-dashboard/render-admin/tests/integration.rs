@@ -96,6 +96,115 @@ mod perf_tests {
     }
 }
 
+// ── routes ────────────────────────────────────────────────────────────────────
+
+mod routes_tests {
+    use super::*;
+    use render_admin::perf::routes_blob;
+
+    fn write_log(dir: &TempDir, lines: &[&str]) -> std::path::PathBuf {
+        let p = dir.path().join("m6.log");
+        let mut f = fs::File::create(&p).unwrap();
+        for line in lines { writeln!(f, "{}", line).unwrap(); }
+        p
+    }
+
+    #[test]
+    fn empty_log_returns_empty_routes() {
+        let dir = tmp();
+        let path = write_log(&dir, &[]);
+        let v = routes_blob(&path, 1000);
+        assert_eq!(v["sample_requests"], 0);
+        assert!(v["routes"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn missing_log_returns_empty_routes() {
+        let dir = tmp();
+        let path = dir.path().join("no.log");
+        let v = routes_blob(&path, 1000);
+        assert_eq!(v["sample_requests"], 0);
+    }
+
+    #[test]
+    fn aggregates_per_path() {
+        let dir = tmp();
+        let path = write_log(&dir, &[
+            r#"{"msg":"request complete","path":"/","status":200,"cache_hit":true,"latency_us":100}"#,
+            r#"{"msg":"request complete","path":"/","status":200,"cache_hit":true,"latency_us":200}"#,
+            r#"{"msg":"request complete","path":"/blog","status":200,"cache_hit":false,"latency_us":300}"#,
+            r#"{"msg":"request complete","path":"/blog","status":200,"cache_hit":true,"latency_us":400}"#,
+            r#"{"msg":"periodic stats","rps_avg":10}"#,   // should be ignored
+        ]);
+        let v = routes_blob(&path, 1000);
+        assert_eq!(v["sample_requests"], 4);
+
+        let routes = v["routes"].as_array().unwrap();
+        // Sorted by requests desc; both paths have 2 requests each.
+        assert_eq!(routes.len(), 2);
+
+        let root = routes.iter().find(|r| r["path"] == "/").unwrap();
+        assert_eq!(root["requests"],   2);
+        assert_eq!(root["cache_hits"], 2);
+        assert_eq!(root["cache_misses"], 0);
+        assert_eq!(root["avg_latency_us"], 150);
+
+        let blog = routes.iter().find(|r| r["path"] == "/blog").unwrap();
+        assert_eq!(blog["cache_hits"],   1);
+        assert_eq!(blog["cache_misses"], 1);
+        assert_eq!(blog["avg_latency_us"], 350);
+    }
+
+    #[test]
+    fn sorted_by_request_count_descending() {
+        let dir = tmp();
+        let lines: Vec<String> = (0..5).map(|_| r#"{"msg":"request complete","path":"/popular","cache_hit":true,"latency_us":50}"#.to_string())
+            .chain((0..2).map(|_| r#"{"msg":"request complete","path":"/rare","cache_hit":false,"latency_us":200}"#.to_string()))
+            .collect();
+        let refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
+        let path = write_log(&dir, &refs);
+        let v = routes_blob(&path, 1000);
+        let routes = v["routes"].as_array().unwrap();
+        assert_eq!(routes[0]["path"], "/popular");
+        assert_eq!(routes[1]["path"], "/rare");
+    }
+
+    #[test]
+    fn sample_n_limits_entries_examined() {
+        let dir = tmp();
+        // Write 10 entries for / and then 3 for /new.
+        let mut lines: Vec<String> = (0..10)
+            .map(|_| r#"{"msg":"request complete","path":"/","cache_hit":true,"latency_us":10}"#.to_string())
+            .collect();
+        lines.extend((0..3)
+            .map(|_| r#"{"msg":"request complete","path":"/new","cache_hit":false,"latency_us":20}"#.to_string()));
+        let refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
+        let path = write_log(&dir, &refs);
+
+        // Limit sample to last 3 entries — should only see /new.
+        let v = routes_blob(&path, 3);
+        assert_eq!(v["sample_requests"], 3);
+        let routes = v["routes"].as_array().unwrap();
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0]["path"], "/new");
+    }
+
+    #[test]
+    fn hit_rate_calculated_correctly() {
+        let dir = tmp();
+        let path = write_log(&dir, &[
+            r#"{"msg":"request complete","path":"/x","cache_hit":true,"latency_us":1}"#,
+            r#"{"msg":"request complete","path":"/x","cache_hit":true,"latency_us":1}"#,
+            r#"{"msg":"request complete","path":"/x","cache_hit":false,"latency_us":1}"#,
+            r#"{"msg":"request complete","path":"/x","cache_hit":false,"latency_us":1}"#,
+        ]);
+        let v = routes_blob(&path, 1000);
+        let routes = v["routes"].as_array().unwrap();
+        let hit_rate = routes[0]["hit_rate"].as_f64().unwrap();
+        assert!((hit_rate - 0.5).abs() < 0.001, "expected 0.5, got {hit_rate}");
+    }
+}
+
 // ── system ────────────────────────────────────────────────────────────────────
 
 mod system_tests {
