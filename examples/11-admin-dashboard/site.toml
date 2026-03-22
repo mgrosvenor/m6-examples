@@ -1,6 +1,9 @@
 # example 11 — admin dashboard
 # All /api/admin/* routes are protected by "role:admin".
 
+[site]
+name = "m6 Admin Dashboard"
+
 [server]
 bind        = "127.0.0.1:8444"
 tls_cert    = "../../localhost.pem"

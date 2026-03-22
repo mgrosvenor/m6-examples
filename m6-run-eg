@@ -114,7 +114,7 @@ die() { echo "error: $*" >&2; exit 1; }
 # Map example number → directory (accepts "1", "01", "2", "05", etc.)
 find_eg_dir() {
     local num
-    num=$(printf "%02d" "$1" 2>/dev/null) || die "invalid example number: $1"
+    num=$(printf "%02d" "$((10#$1))" 2>/dev/null) || die "invalid example number: $1"
     local dir
     dir=$(find "$EXAMPLES_DIR" -maxdepth 1 -type d -name "${num}-*" | head -1)
     [ -n "$dir" ] || die "no example directory matching ${num}-*"
@@ -124,7 +124,7 @@ find_eg_dir() {
 # Return the stored pgid for a running example, or empty string.
 running_pgid() {
     local num
-    num=$(printf "%02d" "$1")
+    num=$(printf "%02d" "$((10#$1))")
     local f="$PGID_DIR/${num}.pgid"
     [ -f "$f" ] || { echo ""; return; }
     local pg
@@ -140,7 +140,7 @@ running_pgid() {
 # Kill a process group by pgid and wait for it to exit.
 kill_eg() {
     local num
-    num=$(printf "%02d" "$1")
+    num=$(printf "%02d" "$((10#$1))")
     local pg
     pg=$(running_pgid "$num")
     if [ -n "$pg" ]; then
@@ -166,7 +166,7 @@ kill_eg() {
 start_eg() {
     check_deps
     local num
-    num=$(printf "%02d" "$1")
+    num=$(printf "%02d" "$((10#$1))")
     local dir
     dir=$(find_eg_dir "$1")
     local dev_sh="$dir/dev.sh"

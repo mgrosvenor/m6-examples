@@ -3,8 +3,9 @@
 set -e
 
 SITE="$(cd "$(dirname "$0")" && pwd)"
-M6="${M6:-$(cd "$SITE/../../../m6" && pwd)}"
-export PATH="$M6/target/release:$SITE/../../../target/release:$PATH"
+EXAMPLES="$(cd "$SITE/../.." && pwd)"
+M6="${M6:-$(cd "$SITE/../../../../m6" && pwd)}"
+export PATH="$M6/target/release:$EXAMPLES/target/release:$PATH"
 
 # ── Setup check ───────────────────────────────────────────────────────────────
 if [ ! -f "$SITE/keys/auth.pem" ] || [ ! -f "$SITE/data/auth.db" ]; then
