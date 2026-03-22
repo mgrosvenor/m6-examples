@@ -76,10 +76,16 @@ BODY=$(curl -sk -H "Authorization: Bearer $TOKEN" "$BASE/api/admin/logs")
 check_contains "/api/admin/logs returns lines" '"lines"' "$BODY"
 check_contains "/api/admin/logs returns total_lines" '"total_lines"' "$BODY"
 
+# ── /api/admin/routes ─────────────────────────────────────────────────────────
+echo "-- Routes --"
+BODY=$(curl -sk -H "Authorization: Bearer $TOKEN" "$BASE/api/admin/routes")
+check_contains "/api/admin/routes returns routes"          '"routes"'          "$BODY"
+check_contains "/api/admin/routes returns sample_requests" '"sample_requests"' "$BODY"
+
 # ── /api/admin/config ─────────────────────────────────────────────────────────
 echo "-- Config --"
 BODY=$(curl -sk -H "Authorization: Bearer $TOKEN" "$BASE/api/admin/config")
-check_contains "/api/admin/config returns content" '"content"' "$BODY"
+check_contains "/api/admin/config returns config" '"config"' "$BODY"
 
 # ── /api/admin/config/touch ───────────────────────────────────────────────────
 echo "-- Config touch --"

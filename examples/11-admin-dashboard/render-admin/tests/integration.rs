@@ -76,6 +76,21 @@ mod perf_tests {
     }
 
     #[test]
+    fn all_fields_present_in_periodic_stats() {
+        let dir = tmp();
+        let path = write_log(&dir, &[
+            r#"{"msg":"periodic stats","ts":"2024-01-01T00:00:00Z","rps_avg":100,"rps_peak":200,"latency_p50_us":500,"latency_p99_us":2000,"cache_hits":80,"cache_misses":20,"cache_hit_rate":0.8,"backend_errors":1,"pool_members":4}"#,
+        ]);
+        let v = perf_blob(&path, 60);
+        let entry = &v["history"].as_array().unwrap()[0];
+        for key in &["ts","rps_avg","rps_peak","latency_p50_us","latency_p99_us","cache_hits","cache_misses","cache_hit_rate","backend_errors","pool_members"] {
+            assert!(!entry[key].is_null(), "missing field: {key}");
+        }
+        assert_eq!(entry["backend_errors"], 1);
+        assert_eq!(entry["pool_members"], 4);
+    }
+
+    #[test]
     fn n_limits_history_to_last_n_entries() {
         let dir = tmp();
         // 5 periodic stats entries
@@ -202,6 +217,42 @@ mod routes_tests {
         let routes = v["routes"].as_array().unwrap();
         let hit_rate = routes[0]["hit_rate"].as_f64().unwrap();
         assert!((hit_rate - 0.5).abs() < 0.001, "expected 0.5, got {hit_rate}");
+    }
+
+    #[test]
+    fn sample_window_secs_computed_from_timestamps() {
+        let dir = tmp();
+        let path = write_log(&dir, &[
+            r#"{"msg":"request complete","path":"/","ts":"2024-01-01T00:00:00Z","cache_hit":false,"latency_us":1}"#,
+            r#"{"msg":"request complete","path":"/","ts":"2024-01-01T00:01:00Z","cache_hit":false,"latency_us":1}"#,
+        ]);
+        let v = routes_blob(&path, 1000);
+        let window = v["sample_window_secs"].as_u64().expect("sample_window_secs should be a number");
+        assert_eq!(window, 60, "expected 60s window, got {window}");
+    }
+
+    #[test]
+    fn sample_window_secs_null_without_timestamps() {
+        let dir = tmp();
+        // Entries without ts fields — window must be null.
+        let path = write_log(&dir, &[
+            r#"{"msg":"request complete","path":"/","cache_hit":false,"latency_us":1}"#,
+            r#"{"msg":"request complete","path":"/","cache_hit":false,"latency_us":1}"#,
+        ]);
+        let v = routes_blob(&path, 1000);
+        assert!(v["sample_window_secs"].is_null(), "expected null when no timestamps present");
+    }
+
+    #[test]
+    fn zero_latency_entries_do_not_panic() {
+        // All zero latency_us values — avg should be 0.
+        let dir = tmp();
+        let path = write_log(&dir, &[
+            r#"{"msg":"request complete","path":"/","cache_hit":false,"latency_us":0}"#,
+        ]);
+        let v = routes_blob(&path, 1000);
+        let routes = v["routes"].as_array().unwrap();
+        assert_eq!(routes[0]["avg_latency_us"], 0);
     }
 }
 
@@ -431,6 +482,19 @@ mod logs_tests {
         let v = logs_blob(&path, 1000);
         assert_eq!(v["lines"].as_array().unwrap().len(), 3);
     }
+
+    #[test]
+    fn line_content_is_correct() {
+        let dir = tmp();
+        // Write specific named lines.
+        let p = dir.path().join("specific.log");
+        fs::write(&p, "alpha\nbeta\ngamma\n").unwrap();
+        let v = logs_blob(&p, 100);
+        let lines = v["lines"].as_array().unwrap();
+        assert_eq!(lines[0].as_str().unwrap(), "alpha");
+        assert_eq!(lines[1].as_str().unwrap(), "beta");
+        assert_eq!(lines[2].as_str().unwrap(), "gamma");
+    }
 }
 
 // ── ops ───────────────────────────────────────────────────────────────────────
@@ -520,6 +584,15 @@ mod ops_tests {
         // Original file must be unchanged.
         let content = fs::read_to_string(&path).unwrap();
         assert!(content.contains("bind"));
+    }
+
+    #[test]
+    fn config_write_empty_object_succeeds() {
+        let dir = tmp();
+        let path = write_toml(&dir, "");
+        config_write(&path, &json!({})).expect("empty object should be valid TOML");
+        let read_back = config_read(&path);
+        assert!(read_back["config"].is_object());
     }
 
     #[test]

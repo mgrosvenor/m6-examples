@@ -17,6 +17,15 @@ socket  = "/tmp/m6/render-admin.sock"
 name    = "auth"
 socket  = "/tmp/m6/m6-auth.sock"
 
+[[backend]]
+name    = "static"
+socket  = "/tmp/m6/m6-file-admin.sock"
+
+[[route]]
+path    = "/"
+backend = "static"
+cache   = "public, max-age=3600"
+
 [[route]]
 path    = "/api/admin/*"
 backend = "render-admin"

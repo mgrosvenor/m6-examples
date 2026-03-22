@@ -14,6 +14,7 @@ stop_all() {
     echo "Stopping services..."
     for pidfile in "$PID_DIR/m6-auth-admin.pid" \
                    "$PID_DIR/render-admin.pid" \
+                   "$PID_DIR/m6-file-admin.pid" \
                    "$PID_DIR/m6-http-admin.pid"; do
         if [ -f "$pidfile" ]; then
             kill -TERM "$(cat "$pidfile")" 2>/dev/null || true
@@ -37,6 +38,13 @@ render-admin "$SITE" "$SITE/configs/render-admin.conf" &
 ADMIN_PID=$!
 echo $ADMIN_PID > "$PID_DIR/render-admin.pid"
 
+# ── m6-file (static dashboard) ────────────────────────────────────────────────
+echo "Starting m6-file..."
+M6_SOCKET_OVERRIDE=/tmp/m6/m6-file-admin.sock \
+    m6-file "$SITE" "$SITE/configs/m6-file.conf" &
+FILE_PID=$!
+echo $FILE_PID > "$PID_DIR/m6-file-admin.pid"
+
 # ── m6-http ───────────────────────────────────────────────────────────────────
 echo "Starting m6-http..."
 m6-http "$SITE/site.toml" &
@@ -44,8 +52,11 @@ HTTP_PID=$!
 echo $HTTP_PID > "$PID_DIR/m6-http-admin.pid"
 
 echo ""
-echo "Admin API running at https://localhost:8444"
+echo "Admin dashboard: https://localhost:8444/"
+echo "Admin API:       https://localhost:8444/api/admin/*"
+echo ""
 echo "  GET  /api/admin/perf"
+echo "  GET  /api/admin/routes"
 echo "  GET  /api/admin/system"
 echo "  GET  /api/admin/bench"
 echo "  POST /api/admin/bench"
