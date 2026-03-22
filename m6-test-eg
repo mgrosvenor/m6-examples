@@ -43,7 +43,7 @@ should_skip() {
     local n
     n=$(printf "%02d" "$((10#$1))")
     for s in $SKIP_ALWAYS; do
-        [ "$n" = "$(printf "%02d" "$s")" ] && return 0
+        [ "$n" = "$(printf "%02d" "$((10#$s))")" ] && return 0
     done
     return 1
 }

@@ -230,7 +230,7 @@ start_eg() {
     done
     if lsof -ti ":$port" &>/dev/null; then
         echo "up. $(date '+%H:%M:%S')"
-        [ "$OPEN_BROWSER" = "1" ] && open_browser "$1"
+        [ "$OPEN_BROWSER" = "1" ] && open_browser "$1" || true
     else
         echo "port $port not open after 10s — check /tmp/m6-eg-${num}.log"
     fi

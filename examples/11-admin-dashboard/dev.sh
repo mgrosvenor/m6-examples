@@ -7,6 +7,19 @@ EXAMPLES="$(cd "$SITE/../.." && pwd)"
 M6="${M6:-$(cd "$SITE/../../../m6" && pwd)}"
 export PATH="$M6/target/release:$EXAMPLES/target/release:$PATH"
 
+# ── TLS certs ─────────────────────────────────────────────────────────────────
+mkdir -p "$SITE/keys"
+if [ ! -f "$SITE/keys/dev.pem" ]; then
+    if ! command -v mkcert &>/dev/null; then
+        echo "ERROR: mkcert not found. Install with: brew install mkcert" >&2
+        exit 1
+    fi
+    mkcert -install 2>/dev/null || true
+    mkcert -key-file "$SITE/keys/dev-key.pem" \
+           -cert-file "$SITE/keys/dev.pem" \
+           localhost 127.0.0.1
+fi
+
 # ── Setup check ───────────────────────────────────────────────────────────────
 if [ ! -f "$SITE/keys/auth.pem" ] || [ ! -f "$SITE/data/auth.db" ]; then
     echo "First-time setup required. Running setup.sh..."

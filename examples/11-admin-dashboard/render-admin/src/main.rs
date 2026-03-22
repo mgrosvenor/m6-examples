@@ -49,8 +49,15 @@ fn init_global(cfg: &serde_json::Map<String, Value>) -> m6_render::Result<Global
             .unwrap_or(default)
     };
 
+    // Resolve paths relative to the site_dir (first CLI arg) when they are relative.
+    let site_dir = PathBuf::from(std::env::args().nth(1).unwrap_or_default());
+    let resolve = |raw: String| -> PathBuf {
+        let p = PathBuf::from(&raw);
+        if p.is_absolute() { p } else { site_dir.join(p) }
+    };
+
     let log_file = PathBuf::from(get("log_file", "/tmp/m6/m6-http.log"));
-    let site_toml = PathBuf::from(get("site_toml", "site.toml"));
+    let site_toml = resolve(get("site_toml", "site.toml"));
     let bench_bin = PathBuf::from(get("bench_bin", "m6-bench"));
 
     // Parse services: array of { name, pid_file } objects.

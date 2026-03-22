@@ -6,37 +6,107 @@ name   = "m6 Admin Dashboard"
 domain = "localhost"
 
 [server]
-bind        = "127.0.0.1:8444"
-tls_cert    = "../../localhost.pem"
-tls_key     = "../../localhost-key.pem"
-log_file    = "/tmp/m6/m6-http-admin.log"
-log_level   = "info"
-error_mode  = "json"
+bind     = "127.0.0.1:8444"
+tls_cert = "keys/dev.pem"
+tls_key  = "keys/dev-key.pem"
+
+[auth]
+backend    = "auth"
+public_key = "keys/auth.pub"
+
+[log]
+level = "info"
 
 [[backend]]
 name    = "render-admin"
-socket  = "/tmp/m6/render-admin.sock"
+sockets = "/tmp/m6/render-admin.sock"
 
 [[backend]]
 name    = "auth"
-socket  = "/tmp/m6/m6-auth-admin.sock"
+sockets = "/tmp/m6/m6-auth-admin.sock"
 
 [[backend]]
 name    = "static"
-socket  = "/tmp/m6/m6-file-admin.sock"
+sockets = "/tmp/m6/m6-file-admin.sock"
 
 [[route]]
 path    = "/"
 backend = "static"
 cache   = "public, max-age=3600"
 
+# Admin API routes — all require role:admin
 [[route]]
-path    = "/api/admin/*"
+path    = "/api/admin/perf"
 backend = "render-admin"
 require = "role:admin"
 cache   = "no-store"
 
 [[route]]
-path    = "/auth/*"
+path    = "/api/admin/routes"
+backend = "render-admin"
+require = "role:admin"
+cache   = "no-store"
+
+[[route]]
+path    = "/api/admin/system"
+backend = "render-admin"
+require = "role:admin"
+cache   = "no-store"
+
+[[route]]
+path    = "/api/admin/bench"
+backend = "render-admin"
+require = "role:admin"
+cache   = "no-store"
+
+[[route]]
+path    = "/api/admin/bench/{id}"
+backend = "render-admin"
+require = "role:admin"
+cache   = "no-store"
+
+[[route]]
+path    = "/api/admin/logs"
+backend = "render-admin"
+require = "role:admin"
+cache   = "no-store"
+
+[[route]]
+path    = "/api/admin/config"
+backend = "render-admin"
+require = "role:admin"
+cache   = "no-store"
+
+[[route]]
+path    = "/api/admin/config/touch"
+backend = "render-admin"
+require = "role:admin"
+cache   = "no-store"
+
+[[route]]
+path    = "/api/admin/cache/flush"
+backend = "render-admin"
+require = "role:admin"
+cache   = "no-store"
+
+[[route]]
+path    = "/api/admin/services/{name}/restart"
+backend = "render-admin"
+require = "role:admin"
+cache   = "no-store"
+
+# Auth endpoints
+[[route]]
+path    = "/auth/login"
+backend = "auth"
+cache   = "no-store"
+
+[[route]]
+path    = "/auth/logout"
+backend = "auth"
+cache   = "no-store"
+
+[[route]]
+path    = "/auth/refresh"
 backend = "auth"
 cache   = "no-store"
