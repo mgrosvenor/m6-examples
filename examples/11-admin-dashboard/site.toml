@@ -15,7 +15,7 @@ socket  = "/tmp/m6/render-admin.sock"
 
 [[backend]]
 name    = "auth"
-socket  = "/tmp/m6/m6-auth.sock"
+socket  = "/tmp/m6/m6-auth-admin.sock"
 
 [[backend]]
 name    = "static"

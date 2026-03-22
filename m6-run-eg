@@ -22,7 +22,6 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 EXAMPLES_DIR="$SCRIPT_DIR/examples"
 M6_DIR="${M6:-$(cd "$SCRIPT_DIR/../m6" 2>/dev/null && pwd || echo "")}"
 PGID_DIR="/tmp/m6-eg"
-PORT=8443
 OPEN_BROWSER=1
 
 # Ensure m6 binaries are on PATH for dev.sh scripts that don't set it themselves.
@@ -153,7 +152,9 @@ kill_eg() {
         done
         kill -9 "$pg" 2>/dev/null || true       # force-kill if still alive
         # Also clean up anything still on the port.
-        lsof -ti ":$PORT" 2>/dev/null | xargs kill -9 2>/dev/null || true
+        local port
+        port=$(example_port "$num" 2>/dev/null || echo "8443")
+        lsof -ti ":$port" 2>/dev/null | xargs kill -9 2>/dev/null || true
         rm -f "$PGID_DIR/${num}.pgid"
         echo "stopped."
     else
@@ -186,8 +187,21 @@ start_eg() {
     done
 
     # Clear port (dev.sh does this too, but ensure a clean start).
-    lsof -ti ":$PORT" 2>/dev/null | xargs kill -9 2>/dev/null || true
+    local port
+    port=$(example_port "$1")
+    lsof -ti ":$port" 2>/dev/null | xargs kill -9 2>/dev/null || true
     sleep 0.3
+
+    # Run setup.sh if present and not yet completed (detected by absence of keys/ or data/).
+    if [ -f "$dir/setup.sh" ]; then
+        local needs_setup=0
+        [ ! -f "$dir/keys/auth.pem" ] && needs_setup=1
+        [ ! -d "$dir/data" ] && needs_setup=1
+        if [ "$needs_setup" -eq 1 ]; then
+            echo "running setup.sh for example $num..."
+            bash "$dir/setup.sh"
+        fi
+    fi
 
     # Build any Cargo sub-packages for this example before launching.
     while IFS= read -r cargo_toml; do
@@ -206,18 +220,30 @@ start_eg() {
     local pg=$!
     echo "$pg" > "$PGID_DIR/${num}.pgid"
 
+    local port
+    port=$(example_port "$1")
     echo "pgid $pg — log: /tmp/m6-eg-${num}.log"
-    echo "waiting for port $PORT..."
+    echo "waiting for port $port..."
     local i=0
-    while ! lsof -ti ":$PORT" &>/dev/null && [ $i -lt 50 ]; do
+    while ! lsof -ti ":$port" &>/dev/null && [ $i -lt 50 ]; do
         sleep 0.2; i=$((i+1))
     done
-    if lsof -ti ":$PORT" &>/dev/null; then
+    if lsof -ti ":$port" &>/dev/null; then
         echo "up. $(date '+%H:%M:%S')"
         [ "$OPEN_BROWSER" = "1" ] && open_browser "$1"
     else
-        echo "port $PORT not open after 10s — check /tmp/m6-eg-${num}.log"
+        echo "port $port not open after 10s — check /tmp/m6-eg-${num}.log"
     fi
+}
+
+# Detect the port from an example's site.toml (defaults to 8443).
+example_port() {
+    local dir
+    dir=$(find_eg_dir "$1" 2>/dev/null) || { echo "8443"; return; }
+    local port
+    port=$(grep -m1 'bind' "$dir/site.toml" 2>/dev/null \
+           | grep -o ':[0-9]*"' | tr -d ':"')
+    echo "${port:-8443}"
 }
 
 # Return the landing URL path for a given example number.
@@ -235,7 +261,9 @@ example_url_path() {
 open_browser() {
     local path
     path=$(example_url_path "$1")
-    local url="https://localhost:${PORT}${path}"
+    local port
+    port=$(example_port "$1")
+    local url="https://localhost:${port}${path}"
     if command -v open &>/dev/null; then          # macOS
         open "$url" 2>/dev/null || true
     elif command -v xdg-open &>/dev/null; then    # Linux
