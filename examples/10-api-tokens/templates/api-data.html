@@ -2,8 +2,8 @@
 {% block title %}API Data · {{ site_name }}{% endblock %}
 {% block content %}
   <h1>Protected API Endpoint</h1>
-  <p>Caller: <strong>{{ auth.username }}</strong>
-     (roles: {{ auth.roles | join(sep=", ") }})</p>
+  <p>Caller: <strong>{{ auth_username }}</strong>
+     (roles: {{ auth_roles | join(sep=", ") }})</p>
 
   <table>
     <thead>

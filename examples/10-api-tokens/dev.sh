@@ -28,11 +28,11 @@ if [ ! -f "$SITE/keys/auth.pem" ]; then
 fi
 
 # ── Auth database ─────────────────────────────────────────────────────────────
+# Always recreate to start with clean state (removes any API tokens from prior runs).
 mkdir -p "$SITE/configs/data"
-if [ ! -f "$SITE/configs/data/auth.db" ]; then
-    echo "Creating 'api' user (password: secret)..."
-    m6-auth-cli "$SITE/configs/m6-auth.conf" user add api --role api --role user --password secret
-fi
+rm -f "$SITE/configs/data/auth.db"
+echo "Creating 'api' user (password: secret)..."
+m6-auth-cli "$SITE/configs/m6-auth.conf" user add api --role api --role user --password secret
 
 # ── Clean up stale state ──────────────────────────────────────────────────────
 mkdir -p /tmp/m6

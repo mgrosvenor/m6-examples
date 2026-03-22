@@ -144,12 +144,15 @@ run_example() {
             sleep 1; ts_secs=$((ts_secs + 1))
         done
         if kill -0 "$ts_pid" 2>/dev/null; then
-            kill -TERM "$ts_pid" 2>/dev/null
+            kill -TERM "$ts_pid" 2>/dev/null || true
             sleep 1
-            kill -KILL "$ts_pid" 2>/dev/null
+            kill -KILL "$ts_pid" 2>/dev/null || true
             # Don't fail just because we timed out — parse results below
         fi
-        wait "$ts_pid" 2>/dev/null || test_exit=$?
+        # Redirect stderr to suppress bash's "Terminated: 15" job notification.
+        exec 3>&2 2>/dev/null
+        wait "$ts_pid" || test_exit=$?
+        exec 2>&3 3>&-
         # Timeout (SIGKILL) gives exit code 137 or similar; treat as pass if
         # the output shows results (the blocking `wait` is just cosmetic).
         if [ "$test_exit" -gt 1 ]; then
