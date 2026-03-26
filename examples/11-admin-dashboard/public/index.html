@@ -548,24 +548,21 @@ function svgEl(tag, attrs, text) {
 
 function drawTopologySVG(data) {
   const backends = (data && data.backends) || [];
-  const sampleN  = data && data.sample_n;
-  const sampleW  = data && data.sample_window_secs;
+  const sampleW  = (data && data.sample_window_secs) || 0;
 
-  const nodeW = 150, nodeH = 70, rx = 8;
-  const vbW = 700;
-  const minVbH = 360;
-  const rowH = 90;
+  const nodeW = 160, nodeH = 72, rx = 8;
+  const vbW = 520;
+  const rowH = 92;
+  const minVbH = 200;
   const vbH = Math.max(minVbH, backends.length * rowH + 60);
 
-  const cx1 = 80,  cy1 = vbH / 2;         // Client
-  const cx2 = 310, cy2 = vbH / 2;         // m6-http
-  const cx3 = 560;                          // Backend column x center
+  // 2-column layout derived from site.toml: m6-http (left) → backends (right)
+  const cxL = 130, cyL = vbH / 2;   // m6-http
+  const cxR = 390;                    // backends column x
 
-  const nBe = backends.length;
   function beY(i) {
-    const totalH = nBe * rowH;
-    const startY = (vbH - totalH) / 2 + rowH / 2;
-    return startY + i * rowH;
+    const totalH = backends.length * rowH;
+    return (vbH - totalH) / 2 + rowH / 2 + i * rowH;
   }
 
   const svg = document.createElementNS(SVG_NS, 'svg');
@@ -573,7 +570,7 @@ function drawTopologySVG(data) {
   svg.setAttribute('width',  '100%');
   svg.setAttribute('style',  'display:block;');
 
-  // Arrow marker def
+  // Arrow marker defs
   const defs = svgEl('defs', {});
   for (const [id, color] of [['arr-ok', TOPO_COLOR.ok], ['arr-warn', TOPO_COLOR.warn], ['arr-err', TOPO_COLOR.err]]) {
     const marker = svgEl('marker', { id, markerWidth: '7', markerHeight: '7', refX: '6', refY: '3.5', orient: 'auto' });
@@ -582,67 +579,48 @@ function drawTopologySVG(data) {
   }
   svg.appendChild(defs);
 
-  // Helper: draw a node group
   function drawNode(cx, cy, label, line2, line3, borderColor, clickName) {
     const x = cx - nodeW / 2, y = cy - nodeH / 2;
     const g = svgEl('g', clickName ? { class: 'topo-node', style: 'cursor:pointer' } : {});
     g.appendChild(svgEl('rect', { x, y, width: nodeW, height: nodeH, rx, fill: TOPO_COLOR.panel, stroke: borderColor, 'stroke-width': 2 }));
     g.appendChild(svgEl('text', { x: cx, y: y + 20, 'text-anchor': 'middle', 'font-size': 12, 'font-weight': '700', fill: TOPO_COLOR.text }, label));
     if (line2) g.appendChild(svgEl('text', { x: cx, y: y + 36, 'text-anchor': 'middle', 'font-size': 10, fill: TOPO_COLOR.muted }, line2));
-    if (line3) g.appendChild(svgEl('text', { x: cx, y: y + 52, 'text-anchor': 'middle', 'font-size': 10, fill: TOPO_COLOR.muted }, line3));
+    if (line3) g.appendChild(svgEl('text', { x: cx, y: y + 53, 'text-anchor': 'middle', 'font-size': 10, fill: TOPO_COLOR.muted }, line3));
     if (clickName) g.addEventListener('click', () => openBackendDetail(clickName));
     return g;
   }
 
-  // Helper: draw an edge with arrow
   function drawEdge(x1, y1, x2, y2, color) {
     const markerId = color === TOPO_COLOR.warn ? 'arr-warn' : color === TOPO_COLOR.err ? 'arr-err' : 'arr-ok';
-    // Shorten line by marker size so arrow tip sits at node edge
     const dx = x2 - x1, dy = y2 - y1;
     const len = Math.sqrt(dx*dx + dy*dy) || 1;
-    const ex2 = x2 - (dx/len) * 7;
-    const ey2 = y2 - (dy/len) * 7;
-    return svgEl('line', { x1, y1, x2: ex2, y2: ey2, stroke: color, 'stroke-width': 2, 'marker-end': `url(#${markerId})` });
+    return svgEl('line', { x1, y1, x2: x2 - (dx/len)*7, y2: y2 - (dy/len)*7,
+      stroke: color, 'stroke-width': 2, 'marker-end': `url(#${markerId})` });
   }
 
-  // Client node — no real data, always green border
-  svg.appendChild(drawNode(cx1, cy1, 'Client', '', '', TOPO_COLOR.ok, null));
+  // Aggregate stats for the m6-http node — summed from all backends in site.toml
+  const totalReqs = backends.reduce((s, b) => s + (b.requests || 0), 0);
+  const totalHits = backends.reduce((s, b) => s + (b.cache_hits || 0), 0);
+  const totalRps  = sampleW > 0 ? Math.round(totalReqs / sampleW) + ' req/s' : '—';
+  const totalHitPct = totalReqs > 0 ? (totalHits / totalReqs * 100).toFixed(1) + '% hit' : '';
+  const httpBind  = (data && data.bind) || '';
 
-  // Total RPS from m6-http perspective (sum across backends or from first backend sample window)
-  let totalRps = '—';
-  if (sampleN != null && sampleW) totalRps = Math.round(sampleN / sampleW) + ' req/s';
+  svg.appendChild(drawNode(cxL, cyL, 'm6-http', httpBind,
+    totalRps + (totalHitPct ? '  ' + totalHitPct : ''), TOPO_COLOR.ok, null));
 
-  // m6-http node — always labeled "m6-http"; bind and rps as subtitles
-  const httpBind = (data && data.bind) || '';
-  svg.appendChild(drawNode(cx2, cy2, 'm6-http', httpBind, totalRps, TOPO_COLOR.ok, null));
-
-  // Client -> m6-http edge (always green)
-  svg.appendChild(drawEdge(cx1 + nodeW/2, cy1, cx2 - nodeW/2, cy2, TOPO_COLOR.ok));
-
-  // Backend nodes + edges
+  // Backend nodes + edges — structure from site.toml [[backend]] and [[route]]
   for (let i = 0; i < backends.length; i++) {
     const be = backends[i];
     const cy = beY(i);
     const mc = missColor(be.miss_rate);
-
-    // Compute rps for this backend
-    let rps = '—';
-    if (sampleN != null && sampleW && data.backends.length > 0) {
-      const share = be.requests != null ? be.requests : 0;
-      const total = data.backends.reduce((s, b) => s + (b.requests || 0), 0);
-      if (total > 0 && sampleN) {
-        rps = Math.round((share / total) * (sampleN / sampleW)) + ' req/s';
-      }
-    }
-
-    const missStr = be.miss_rate != null ? (be.miss_rate * 100).toFixed(1) + '% miss' : '—% miss';
+    const rps = sampleW > 0 && be.requests != null
+      ? Math.round(be.requests / sampleW) + ' req/s' : '—';
+    const missStr = be.miss_rate != null ? (be.miss_rate * 100).toFixed(1) + '% miss' : '';
     const p50str  = be.hit_p50_ns != null ? 'p50 ' + fmt.latNs(be.hit_p50_ns) : '';
-    const line3   = missStr + (p50str ? '  ' + p50str : '');
+    const line3   = [missStr, p50str].filter(Boolean).join('  ');
 
-    svg.appendChild(drawNode(cx3, cy, be.name, rps, line3, mc, be.name));
-
-    // m6-http right edge -> backend left edge
-    svg.appendChild(drawEdge(cx2 + nodeW/2, cy2, cx3 - nodeW/2, cy, mc));
+    svg.appendChild(drawNode(cxR, cy, be.name, rps, line3, mc, be.name));
+    svg.appendChild(drawEdge(cxL + nodeW/2, cyL, cxR - nodeW/2, cy, mc));
   }
 
   return svg;
