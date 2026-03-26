@@ -115,12 +115,19 @@ pub fn backends_summary_blob(log_path: &Path, site_toml: &Path, sample_n: usize)
         entries.last().and_then(|v| v["timestamp"].as_str()),
     );
 
+    // Most recent periodic-stats entry from m6-http — authoritative cache/latency totals.
+    let m6http_stats = read_periodic_stats(log_path, 1)
+        .into_iter()
+        .next()
+        .unwrap_or(Value::Null);
+
     json!({
         "site_name":          site_name,
         "bind":               bind,
         "backends":           backends,
         "sample_n":           entries.len(),
         "sample_window_secs": window_secs,
+        "m6http_stats":       m6http_stats,
     })
 }
 

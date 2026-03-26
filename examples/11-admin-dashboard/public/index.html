@@ -547,18 +547,22 @@ function svgEl(tag, attrs, text) {
 }
 
 function drawTopologySVG(data) {
-  const backends = (data && data.backends) || [];
-  const sampleW  = (data && data.sample_window_secs) || 0;
+  const backends  = (data && data.backends)   || [];
+  const sampleW   = (data && data.sample_window_secs) || 0;
+  const m6s       = (data && data.m6http_stats) || {};  // most recent periodic-stats entry
 
-  const nodeW = 160, nodeH = 72, rx = 8;
-  const vbW = 520;
-  const rowH = 92;
-  const minVbH = 200;
-  const vbH = Math.max(minVbH, backends.length * rowH + 60);
+  const nodeW = 164, rx = 8;
+  const LINE_H = 15, TITLE_Y = 20, FIRST_LINE_Y = 37;
+  // Node height: title + N detail lines + 10px padding
+  function nodeH(nLines) { return FIRST_LINE_Y + nLines * LINE_H + 6; }
 
-  // 2-column layout derived from site.toml: m6-http (left) → backends (right)
-  const cxL = 130, cyL = vbH / 2;   // m6-http
-  const cxR = 390;                    // backends column x
+  const vbW   = 530;
+  const rowH  = 90;
+  const minVbH = 220;
+  const vbH   = Math.max(minVbH, backends.length * rowH + 60);
+
+  const cxL = 132, cyL = vbH / 2;   // m6-http (left)
+  const cxR = 398;                    // backends column
 
   function beY(i) {
     const totalH = backends.length * rowH;
@@ -570,7 +574,6 @@ function drawTopologySVG(data) {
   svg.setAttribute('width',  '100%');
   svg.setAttribute('style',  'display:block;');
 
-  // Arrow marker defs
   const defs = svgEl('defs', {});
   for (const [id, color] of [['arr-ok', TOPO_COLOR.ok], ['arr-warn', TOPO_COLOR.warn], ['arr-err', TOPO_COLOR.err]]) {
     const marker = svgEl('marker', { id, markerWidth: '7', markerHeight: '7', refX: '6', refY: '3.5', orient: 'auto' });
@@ -579,47 +582,55 @@ function drawTopologySVG(data) {
   }
   svg.appendChild(defs);
 
-  function drawNode(cx, cy, label, line2, line3, borderColor, clickName) {
-    const x = cx - nodeW / 2, y = cy - nodeH / 2;
+  // Draw a node with a label and an arbitrary list of detail lines.
+  function drawNode(cx, cy, h, label, lines, borderColor, clickName) {
+    const x = cx - nodeW / 2, y = cy - h / 2;
     const g = svgEl('g', clickName ? { class: 'topo-node', style: 'cursor:pointer' } : {});
-    g.appendChild(svgEl('rect', { x, y, width: nodeW, height: nodeH, rx, fill: TOPO_COLOR.panel, stroke: borderColor, 'stroke-width': 2 }));
-    g.appendChild(svgEl('text', { x: cx, y: y + 20, 'text-anchor': 'middle', 'font-size': 12, 'font-weight': '700', fill: TOPO_COLOR.text }, label));
-    if (line2) g.appendChild(svgEl('text', { x: cx, y: y + 36, 'text-anchor': 'middle', 'font-size': 10, fill: TOPO_COLOR.muted }, line2));
-    if (line3) g.appendChild(svgEl('text', { x: cx, y: y + 53, 'text-anchor': 'middle', 'font-size': 10, fill: TOPO_COLOR.muted }, line3));
+    g.appendChild(svgEl('rect', { x, y, width: nodeW, height: h, rx, fill: TOPO_COLOR.panel, stroke: borderColor, 'stroke-width': 2 }));
+    g.appendChild(svgEl('text', { x: cx, y: y + TITLE_Y, 'text-anchor': 'middle', 'font-size': 12, 'font-weight': '700', fill: TOPO_COLOR.text }, label));
+    lines.forEach((line, i) => {
+      if (line) g.appendChild(svgEl('text', { x: cx, y: y + FIRST_LINE_Y + i * LINE_H, 'text-anchor': 'middle', 'font-size': 10, fill: TOPO_COLOR.muted }, line));
+    });
     if (clickName) g.addEventListener('click', () => openBackendDetail(clickName));
     return g;
   }
 
   function drawEdge(x1, y1, x2, y2, color) {
     const markerId = color === TOPO_COLOR.warn ? 'arr-warn' : color === TOPO_COLOR.err ? 'arr-err' : 'arr-ok';
-    const dx = x2 - x1, dy = y2 - y1;
-    const len = Math.sqrt(dx*dx + dy*dy) || 1;
+    const dx = x2 - x1, dy = y2 - y1, len = Math.sqrt(dx*dx + dy*dy) || 1;
     return svgEl('line', { x1, y1, x2: x2 - (dx/len)*7, y2: y2 - (dy/len)*7,
       stroke: color, 'stroke-width': 2, 'marker-end': `url(#${markerId})` });
   }
 
-  // Aggregate stats for the m6-http node — summed from all backends in site.toml
-  const totalReqs = backends.reduce((s, b) => s + (b.requests || 0), 0);
-  const totalHits = backends.reduce((s, b) => s + (b.cache_hits || 0), 0);
-  const totalRps  = sampleW > 0 ? Math.round(totalReqs / sampleW) + ' req/s' : '—';
-  const totalHitPct = totalReqs > 0 ? (totalHits / totalReqs * 100).toFixed(1) + '% hit' : '';
-  const httpBind  = (data && data.bind) || '';
+  // ── m6-http node — stats from most recent periodic-stats log entry ──────────
+  const httpBind    = (data && data.bind) || '';
+  const rpsAvg      = m6s.rps_avg   != null ? m6s.rps_avg + ' req/s avg' : '— req/s';
+  const rpsPeak     = m6s.rps_peak  != null ? m6s.rps_peak + ' req/s peak' : '';
+  const hitRate     = m6s.cache_hit_rate != null
+    ? (m6s.cache_hit_rate * 100).toFixed(1) + '% hit  '
+      + (m6s.cache_hits  != null ? m6s.cache_hits  + ' hits' : '') : '';
+  const missLine    = m6s.cache_misses != null ? m6s.cache_misses + ' misses' : '';
+  const hitLat      = m6s.hit_p50_ns  != null ? 'hit p50 '  + fmt.latNs(m6s.hit_p50_ns)  : '';
+  const missLat     = m6s.miss_p50_ns != null ? 'miss p50 ' + fmt.latNs(m6s.miss_p50_ns) : '';
+  const latLine     = [hitLat, missLat].filter(Boolean).join('  ');
 
-  svg.appendChild(drawNode(cxL, cyL, 'm6-http', httpBind,
-    totalRps + (totalHitPct ? '  ' + totalHitPct : ''), TOPO_COLOR.ok, null));
+  const httpLines = [httpBind, rpsAvg, rpsPeak, hitRate, missLine, latLine].filter(Boolean);
+  const hHttp = nodeH(httpLines.length);
+  svg.appendChild(drawNode(cxL, cyL, hHttp, 'm6-http', httpLines, TOPO_COLOR.ok, null));
 
-  // Backend nodes + edges — structure from site.toml [[backend]] and [[route]]
+  // ── Backend nodes + edges — structure from site.toml [[backend]] / [[route]] ─
+  const hBe = nodeH(3);
   for (let i = 0; i < backends.length; i++) {
-    const be = backends[i];
-    const cy = beY(i);
-    const mc = missColor(be.miss_rate);
+    const be  = backends[i];
+    const cy  = beY(i);
+    const mc  = missColor(be.miss_rate);
     const rps = sampleW > 0 && be.requests != null
       ? Math.round(be.requests / sampleW) + ' req/s' : '—';
     const missStr = be.miss_rate != null ? (be.miss_rate * 100).toFixed(1) + '% miss' : '';
     const p50str  = be.hit_p50_ns != null ? 'p50 ' + fmt.latNs(be.hit_p50_ns) : '';
-    const line3   = [missStr, p50str].filter(Boolean).join('  ');
+    const beLines = [rps, [missStr, p50str].filter(Boolean).join('  ')].filter(Boolean);
 
-    svg.appendChild(drawNode(cxR, cy, be.name, rps, line3, mc, be.name));
+    svg.appendChild(drawNode(cxR, cy, hBe, be.name, beLines, mc, be.name));
     svg.appendChild(drawEdge(cxL + nodeW/2, cyL, cxR - nodeW/2, cy, mc));
   }
 
