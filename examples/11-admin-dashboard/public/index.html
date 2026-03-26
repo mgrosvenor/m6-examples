@@ -157,7 +157,10 @@
 
     /* ── config form ── */
     .cfg-section { margin-bottom: 1.5rem; }
-    .cfg-section h3 { font-size: .72rem; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; margin-bottom: .6rem; padding-bottom: .3rem; border-bottom: 1px solid var(--border); }
+    .cfg-section h3 { font-size: .72rem; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; margin-bottom: .6rem; padding-bottom: .3rem; border-bottom: 1px solid var(--border); display:flex; align-items:center; gap:.5rem; }
+    .cfg-section h3 .btn { font-size: .65rem; padding: .15rem .5rem; margin-left: auto; letter-spacing: normal; text-transform: none; }
+    .cfg-del { background: none; border: none; color: var(--muted); cursor: pointer; font-size: .95rem; padding: 0 .3rem; line-height: 1; }
+    .cfg-del:hover { color: var(--err); }
     .cfg-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: .55rem; }
     .cfg-field { display: flex; flex-direction: column; gap: .2rem; }
     .cfg-field > span { font-size: .7rem; color: var(--muted); }
@@ -1252,6 +1255,51 @@ function cfgCheck(label, path, value) {
   </div>`;
 }
 
+function backendRowHtml(i, b) {
+  return `<tr>
+    <td><input type="text" data-cfgpath="backend.${i}.name"    value="${escHtml(b.name    ?? '')}"></td>
+    <td><input type="text" data-cfgpath="backend.${i}.sockets" value="${escHtml(b.sockets ?? '')}"></td>
+    <td><button class="cfg-del" onclick="delCfgRow(this,'backend')" title="Remove">&#x2715;</button></td>
+  </tr>`;
+}
+
+function routeRowHtml(i, r) {
+  return `<tr>
+    <td><input type="text" data-cfgpath="route.${i}.path"    value="${escHtml(r.path    ?? '')}"></td>
+    <td><input type="text" data-cfgpath="route.${i}.backend" value="${escHtml(r.backend ?? '')}"></td>
+    <td><input type="text" data-cfgpath="route.${i}.require" value="${escHtml(r.require ?? '')}"></td>
+    <td><input type="text" data-cfgpath="route.${i}.cache"   value="${escHtml(r.cache   ?? '')}"></td>
+    <td><button class="cfg-del" onclick="delCfgRow(this,'route')" title="Remove">&#x2715;</button></td>
+  </tr>`;
+}
+
+function reindexCfgTable(type) {
+  const tbody = document.getElementById(`cfg-${type}-body`);
+  if (!tbody) return;
+  [...tbody.children].forEach((tr, i) => {
+    tr.querySelectorAll('[data-cfgpath]').forEach(el => {
+      el.dataset.cfgpath = el.dataset.cfgpath.replace(/^(backend|route)\.\d+\./, `${type}.${i}.`);
+    });
+  });
+}
+
+window.addCfgRow = function(type) {
+  const tbody = document.getElementById(`cfg-${type}-body`);
+  if (!tbody) return;
+  const i = tbody.children.length;
+  const tr = document.createElement('tr');
+  tr.innerHTML = (type === 'backend' ? backendRowHtml : routeRowHtml)(i, {}).replace(/^<tr>|<\/tr>$/g, '');
+  // innerHTML on tr doesn't work cross-browser — insert as table row
+  const tmp = document.createElement('tbody');
+  tmp.innerHTML = type === 'backend' ? backendRowHtml(i, {}) : routeRowHtml(i, {});
+  tbody.appendChild(tmp.firstElementChild);
+};
+
+window.delCfgRow = function(btn, type) {
+  btn.closest('tr').remove();
+  reindexCfgTable(type);
+};
+
 function renderConfigForm(cfg) {
   const parts = [];
 
@@ -1298,32 +1346,26 @@ function renderConfigForm(cfg) {
 
   // ── Backends ──
   const backends = Array.isArray(cfg.backend) ? cfg.backend : [];
-  if (backends.length) {
-    const rows = backends.map((b, i) => `<tr>
-      <td><input type="text" data-cfgpath="backend.${i}.name"    value="${escHtml(b.name    ?? '')}"></td>
-      <td><input type="text" data-cfgpath="backend.${i}.sockets" value="${escHtml(b.sockets ?? '')}"></td>
-    </tr>`).join('');
-    parts.push(`<div class="cfg-section"><h3>Backends</h3>
+  {
+    const rows = backends.map((b, i) => backendRowHtml(i, b)).join('');
+    parts.push(`<div class="cfg-section">
+      <h3>Backends <button class="btn secondary" onclick="addCfgRow('backend')">+ Add backend</button></h3>
       <div class="table-wrap" style="max-height:none">
-        <table><thead><tr><th>Name</th><th>Sockets</th></tr></thead>
-        <tbody>${rows}</tbody></table>
+        <table><thead><tr><th>Name</th><th>Sockets</th><th></th></tr></thead>
+        <tbody id="cfg-backend-body">${rows}</tbody></table>
       </div>
     </div>`);
   }
 
   // ── Routes ──
   const routes = Array.isArray(cfg.route) ? cfg.route : [];
-  if (routes.length) {
-    const rows = routes.map((r, i) => `<tr>
-      <td><input type="text" data-cfgpath="route.${i}.path"    value="${escHtml(r.path    ?? '')}"></td>
-      <td><input type="text" data-cfgpath="route.${i}.backend" value="${escHtml(r.backend ?? '')}"></td>
-      <td><input type="text" data-cfgpath="route.${i}.require" value="${escHtml(r.require ?? '')}"></td>
-      <td><input type="text" data-cfgpath="route.${i}.cache"   value="${escHtml(r.cache   ?? '')}"></td>
-    </tr>`).join('');
-    parts.push(`<div class="cfg-section"><h3>Routes</h3>
+  {
+    const rows = routes.map((r, i) => routeRowHtml(i, r)).join('');
+    parts.push(`<div class="cfg-section">
+      <h3>Routes <button class="btn secondary" onclick="addCfgRow('route')">+ Add route</button></h3>
       <div class="table-wrap" style="max-height:none">
-        <table><thead><tr><th>Path</th><th>Backend</th><th>Require</th><th>Cache</th></tr></thead>
-        <tbody>${rows}</tbody></table>
+        <table><thead><tr><th>Path</th><th>Backend</th><th>Require</th><th>Cache</th><th></th></tr></thead>
+        <tbody id="cfg-route-body">${rows}</tbody></table>
       </div>
     </div>`);
   }
@@ -1334,16 +1376,30 @@ function renderConfigForm(cfg) {
 function collectConfigFromForm() {
   // Start from the loaded config so unknown keys are preserved.
   const result = JSON.parse(JSON.stringify(cfgData));
+  // Rebuild arrays fresh from form so added/deleted rows are reflected correctly.
+  result.backend = [];
+  result.route   = [];
+
   document.querySelectorAll('#cfg-wrap [data-cfgpath]').forEach(el => {
     const parts = el.dataset.cfgpath.split('.');
-    let node = result;
-    for (let i = 0; i < parts.length - 1; i++) {
-      node = node[parts[i]];
-      if (node == null) return;
+    const val   = el.type === 'checkbox' ? el.checked : el.value;
+
+    if (parts[0] === 'backend' || parts[0] === 'route') {
+      const arr = result[parts[0]];
+      const idx = parseInt(parts[1]);
+      if (!arr[idx]) arr[idx] = {};
+      arr[idx][parts[2]] = val;
+    } else {
+      let node = result;
+      for (let i = 0; i < parts.length - 1; i++) {
+        if (node[parts[i]] == null) node[parts[i]] = {};
+        node = node[parts[i]];
+      }
+      node[parts[parts.length - 1]] = val;
     }
-    const last = parts[parts.length - 1];
-    node[last] = el.type === 'checkbox' ? el.checked : el.value;
   });
+  result.backend = result.backend.filter(Boolean);
+  result.route   = result.route.filter(Boolean);
   return result;
 }
 
