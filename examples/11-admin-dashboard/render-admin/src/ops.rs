@@ -32,6 +32,7 @@ pub fn config_read(site_toml: &Path) -> Value {
 /// Accept a JSON object representing the full site.toml, convert back to TOML, validate,
 /// and write atomically.  Returns Ok(()) or Err(message).
 pub fn config_write(site_toml: &Path, json: &Value) -> Result<(), String> {
+    let json = &strip_empty_strings(json.clone());
     let toml_val = json_to_toml_value(json)?;
     let content = toml::to_string_pretty(&toml_val)
         .map_err(|e| format!("cannot serialise to TOML: {e}"))?;
@@ -44,6 +45,22 @@ pub fn config_write(site_toml: &Path, json: &Value) -> Result<(), String> {
     fs::write(&tmp, &content).map_err(|e| format!("write failed: {e}"))?;
     fs::rename(&tmp, site_toml).map_err(|e| format!("rename failed: {e}"))?;
     Ok(())
+}
+
+/// Recursively remove empty-string values from objects.
+/// This prevents optional TOML keys like `require = ""` from being written,
+/// which m6-http would misinterpret as a set (but empty) auth requirement.
+fn strip_empty_strings(v: Value) -> Value {
+    match v {
+        Value::Object(map) => Value::Object(
+            map.into_iter()
+                .filter(|(_, v)| v.as_str() != Some(""))
+                .map(|(k, v)| (k, strip_empty_strings(v)))
+                .collect(),
+        ),
+        Value::Array(arr) => Value::Array(arr.into_iter().map(strip_empty_strings).collect()),
+        other => other,
+    }
 }
 
 /// Recursively convert a `serde_json::Value` to a `toml::Value`.
