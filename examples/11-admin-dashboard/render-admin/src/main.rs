@@ -152,12 +152,11 @@ fn handle_bench_poll(req: &Request, g: &Global) -> m6_render::Result<Response> {
 }
 
 fn handle_logs(req: &Request, g: &Global) -> m6_render::Result<Response> {
-    let n = req.dict()
-        .get("n")
-        .and_then(Value::as_str)
-        .and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or(g.log_tail_default);
-    Ok(Response::json(logs::logs_blob(&g.log_file, n)))
+    let n = req.dict().get("n").and_then(Value::as_str)
+        .and_then(|s| s.parse::<usize>().ok()).unwrap_or(g.log_tail_default);
+    let offset = req.dict().get("offset").and_then(Value::as_str)
+        .and_then(|s| s.parse::<u64>().ok());
+    Ok(Response::json(logs::logs_blob(&g.log_file, n, offset)))
 }
 
 fn handle_config_read(_req: &Request, g: &Global) -> m6_render::Result<Response> {
@@ -192,6 +191,22 @@ fn handle_restart(req: &Request, g: &Global) -> m6_render::Result<Response> {
     Ok(Response::json(ops::restart_service(svc)))
 }
 
+fn handle_backends_summary(_req: &Request, g: &Global) -> m6_render::Result<Response> {
+    Ok(Response::json(perf::backends_summary_blob(&g.log_file, &g.site_toml, g.routes_sample)))
+}
+
+fn handle_backend_sample(req: &Request, g: &Global) -> m6_render::Result<Response> {
+    let name = req["name"].as_str().unwrap_or("");
+    let n = req.dict().get("n").and_then(Value::as_str)
+        .and_then(|s| s.parse::<usize>().ok()).unwrap_or(g.routes_sample);
+    Ok(Response::json(perf::backend_stats_blob(&g.log_file, &g.site_toml, name, n)))
+}
+
+fn handle_backend_alltime(req: &Request, g: &Global) -> m6_render::Result<Response> {
+    let name = req["name"].as_str().unwrap_or("");
+    Ok(Response::json(perf::backend_stats_blob(&g.log_file, &g.site_toml, name, usize::MAX)))
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 fn main() {
@@ -220,6 +235,10 @@ fn main() {
         .route_post("/api/admin/cache/flush",    handle_config_touch)
         // Services: restart by name via SIGTERM
         .route_post("/api/admin/services/{name}/restart", handle_restart)
+        // Backends: topology summary + per-backend sample/alltime detail
+        .route_get("/api/admin/backends",                    handle_backends_summary)
+        .route_get("/api/admin/backends/{name}/sample",      handle_backend_sample)
+        .route_get("/api/admin/backends/{name}/alltime",     handle_backend_alltime)
         .run()
         .unwrap_or_else(|e| {
             eprintln!("render-admin error: {e}");

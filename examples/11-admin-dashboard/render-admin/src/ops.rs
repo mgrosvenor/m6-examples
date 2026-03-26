@@ -20,7 +20,13 @@ pub fn config_read(site_toml: &Path) -> Value {
         Ok(v) => v,
         Err(e) => return json!({ "error": format!("cannot convert to JSON: {e}") }),
     };
-    json!({ "path": site_toml.display().to_string(), "config": config })
+    let mtime = fs::metadata(site_toml)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    json!({ "path": site_toml.display().to_string(), "mtime": mtime, "config": config })
 }
 
 /// Accept a JSON object representing the full site.toml, convert back to TOML, validate,

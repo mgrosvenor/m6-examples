@@ -50,8 +50,8 @@ mod perf_tests {
     fn non_stats_lines_are_ignored() {
         let dir = tmp();
         let path = write_log(&dir, &[
-            r#"{"msg":"request complete","path":"/","latency_us":42}"#,
-            r#"{"msg":"m6-render started","routes":3}"#,
+            r#"{"timestamp":"2024-01-01T00:00:00Z","level":"DEBUG","fields":{"message":"request complete","path":"/","latency_ns":42000},"target":"m6_http"}"#,
+            r#"{"timestamp":"2024-01-01T00:00:00Z","level":"INFO","fields":{"message":"m6-render started","routes":3},"target":"m6_http"}"#,
             r#"not json at all"#,
         ]);
         let v = perf_blob(&path, 60);
@@ -62,16 +62,16 @@ mod perf_tests {
     fn periodic_stats_are_parsed() {
         let dir = tmp();
         let path = write_log(&dir, &[
-            r#"{"msg":"request complete","latency_us":10}"#,
-            r#"{"msg":"periodic stats","ts":"2024-01-01T00:00:00Z","rps_avg":100,"rps_peak":200,"latency_p50_us":500,"latency_p99_us":2000,"cache_hits":80,"cache_misses":20,"cache_hit_rate":0.8,"backend_errors":0,"pool_members":4}"#,
-            r#"{"msg":"periodic stats","ts":"2024-01-01T00:00:10Z","rps_avg":150,"rps_peak":300,"latency_p50_us":400,"latency_p99_us":1500,"cache_hits":90,"cache_misses":10,"cache_hit_rate":0.9,"backend_errors":0,"pool_members":4}"#,
+            r#"{"timestamp":"2024-01-01T00:00:00Z","level":"DEBUG","fields":{"message":"request complete","latency_ns":10000},"target":"m6_http"}"#,
+            r#"{"timestamp":"2024-01-01T00:00:00Z","level":"INFO","fields":{"message":"periodic stats","rps_avg":100,"rps_peak":200,"cache_hits":80,"cache_misses":20,"cache_hit_rate":0.8,"backend_errors":0,"pool_members":4,"hit_p50_ns":500000,"miss_p50_ns":2000000},"target":"m6_http"}"#,
+            r#"{"timestamp":"2024-01-01T00:00:10Z","level":"INFO","fields":{"message":"periodic stats","rps_avg":150,"rps_peak":300,"cache_hits":90,"cache_misses":10,"cache_hit_rate":0.9,"backend_errors":0,"pool_members":4,"hit_p50_ns":400000,"miss_p50_ns":1500000},"target":"m6_http"}"#,
         ]);
         let v = perf_blob(&path, 60);
         let history = v["history"].as_array().unwrap();
         assert_eq!(history.len(), 2);
         assert_eq!(history[0]["rps_avg"], 100);
         assert_eq!(history[1]["rps_avg"], 150);
-        assert_eq!(history[0]["latency_p50_us"], 500);
+        assert_eq!(history[0]["hit_p50_ns"], 500000);
         assert_eq!(history[1]["cache_hit_rate"].as_f64().unwrap(), 0.9);
     }
 
@@ -79,11 +79,11 @@ mod perf_tests {
     fn all_fields_present_in_periodic_stats() {
         let dir = tmp();
         let path = write_log(&dir, &[
-            r#"{"msg":"periodic stats","ts":"2024-01-01T00:00:00Z","rps_avg":100,"rps_peak":200,"latency_p50_us":500,"latency_p99_us":2000,"cache_hits":80,"cache_misses":20,"cache_hit_rate":0.8,"backend_errors":1,"pool_members":4}"#,
+            r#"{"timestamp":"2024-01-01T00:00:00Z","level":"INFO","fields":{"message":"periodic stats","rps_avg":100,"rps_peak":200,"cache_hits":80,"cache_misses":20,"cache_hit_rate":0.8,"backend_errors":1,"pool_members":4,"hit_p0_ns":100,"hit_p50_ns":500000,"hit_p99_ns":1000000,"hit_max_ns":2000000,"miss_p0_ns":200,"miss_p50_ns":2000000,"miss_p99_ns":4000000,"miss_max_ns":5000000},"target":"m6_http"}"#,
         ]);
         let v = perf_blob(&path, 60);
         let entry = &v["history"].as_array().unwrap()[0];
-        for key in &["ts","rps_avg","rps_peak","latency_p50_us","latency_p99_us","cache_hits","cache_misses","cache_hit_rate","backend_errors","pool_members"] {
+        for key in &["ts","rps_avg","rps_peak","cache_hits","cache_misses","cache_hit_rate","backend_errors","pool_members","hit_p50_ns","miss_p50_ns"] {
             assert!(!entry[key].is_null(), "missing field: {key}");
         }
         assert_eq!(entry["backend_errors"], 1);
@@ -96,7 +96,7 @@ mod perf_tests {
         // 5 periodic stats entries
         let lines: Vec<String> = (1..=5)
             .map(|i| format!(
-                r#"{{"msg":"periodic stats","rps_avg":{i},"rps_peak":0,"latency_p50_us":0,"latency_p99_us":0,"cache_hits":0,"cache_misses":0,"cache_hit_rate":0,"backend_errors":0,"pool_members":0}}"#,
+                r#"{{"timestamp":"2024-01-01T00:00:00Z","level":"INFO","fields":{{"message":"periodic stats","rps_avg":{i},"rps_peak":0,"cache_hits":0,"cache_misses":0,"cache_hit_rate":0,"backend_errors":0,"pool_members":0}},"target":"m6_http"}}"#,
             ))
             .collect();
         let refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
@@ -145,11 +145,11 @@ mod routes_tests {
     fn aggregates_per_path() {
         let dir = tmp();
         let path = write_log(&dir, &[
-            r#"{"msg":"request complete","path":"/","status":200,"cache_hit":true,"latency_us":100}"#,
-            r#"{"msg":"request complete","path":"/","status":200,"cache_hit":true,"latency_us":200}"#,
-            r#"{"msg":"request complete","path":"/blog","status":200,"cache_hit":false,"latency_us":300}"#,
-            r#"{"msg":"request complete","path":"/blog","status":200,"cache_hit":true,"latency_us":400}"#,
-            r#"{"msg":"periodic stats","rps_avg":10}"#,   // should be ignored
+            r#"{"timestamp":"2024-01-01T00:00:00Z","level":"DEBUG","fields":{"message":"request complete","path":"/","status":200,"cache_hit":true,"latency_ns":100000},"target":"m6_http"}"#,
+            r#"{"timestamp":"2024-01-01T00:00:00Z","level":"DEBUG","fields":{"message":"request complete","path":"/","status":200,"cache_hit":true,"latency_ns":200000},"target":"m6_http"}"#,
+            r#"{"timestamp":"2024-01-01T00:00:00Z","level":"DEBUG","fields":{"message":"request complete","path":"/blog","status":200,"cache_hit":false,"latency_ns":300000},"target":"m6_http"}"#,
+            r#"{"timestamp":"2024-01-01T00:00:00Z","level":"DEBUG","fields":{"message":"request complete","path":"/blog","status":200,"cache_hit":true,"latency_ns":400000},"target":"m6_http"}"#,
+            r#"{"timestamp":"2024-01-01T00:00:00Z","level":"INFO","fields":{"message":"periodic stats","rps_avg":10},"target":"m6_http"}"#,
         ]);
         let v = routes_blob(&path, 1000);
         assert_eq!(v["sample_requests"], 4);
@@ -162,19 +162,19 @@ mod routes_tests {
         assert_eq!(root["requests"],   2);
         assert_eq!(root["cache_hits"], 2);
         assert_eq!(root["cache_misses"], 0);
-        assert_eq!(root["avg_latency_us"], 150);
+        assert_eq!(root["avg_latency_ns"], 150000);
 
         let blog = routes.iter().find(|r| r["path"] == "/blog").unwrap();
         assert_eq!(blog["cache_hits"],   1);
         assert_eq!(blog["cache_misses"], 1);
-        assert_eq!(blog["avg_latency_us"], 350);
+        assert_eq!(blog["avg_latency_ns"], 350000);
     }
 
     #[test]
     fn sorted_by_request_count_descending() {
         let dir = tmp();
-        let lines: Vec<String> = (0..5).map(|_| r#"{"msg":"request complete","path":"/popular","cache_hit":true,"latency_us":50}"#.to_string())
-            .chain((0..2).map(|_| r#"{"msg":"request complete","path":"/rare","cache_hit":false,"latency_us":200}"#.to_string()))
+        let lines: Vec<String> = (0..5).map(|_| r#"{"timestamp":"2024-01-01T00:00:00Z","level":"DEBUG","fields":{"message":"request complete","path":"/popular","cache_hit":true,"latency_ns":50000},"target":"m6_http"}"#.to_string())
+            .chain((0..2).map(|_| r#"{"timestamp":"2024-01-01T00:00:00Z","level":"DEBUG","fields":{"message":"request complete","path":"/rare","cache_hit":false,"latency_ns":200000},"target":"m6_http"}"#.to_string()))
             .collect();
         let refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
         let path = write_log(&dir, &refs);
@@ -189,10 +189,10 @@ mod routes_tests {
         let dir = tmp();
         // Write 10 entries for / and then 3 for /new.
         let mut lines: Vec<String> = (0..10)
-            .map(|_| r#"{"msg":"request complete","path":"/","cache_hit":true,"latency_us":10}"#.to_string())
+            .map(|_| r#"{"timestamp":"2024-01-01T00:00:00Z","level":"DEBUG","fields":{"message":"request complete","path":"/","cache_hit":true,"latency_ns":10000},"target":"m6_http"}"#.to_string())
             .collect();
         lines.extend((0..3)
-            .map(|_| r#"{"msg":"request complete","path":"/new","cache_hit":false,"latency_us":20}"#.to_string()));
+            .map(|_| r#"{"timestamp":"2024-01-01T00:00:00Z","level":"DEBUG","fields":{"message":"request complete","path":"/new","cache_hit":false,"latency_ns":20000},"target":"m6_http"}"#.to_string()));
         let refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
         let path = write_log(&dir, &refs);
 
@@ -208,10 +208,10 @@ mod routes_tests {
     fn hit_rate_calculated_correctly() {
         let dir = tmp();
         let path = write_log(&dir, &[
-            r#"{"msg":"request complete","path":"/x","cache_hit":true,"latency_us":1}"#,
-            r#"{"msg":"request complete","path":"/x","cache_hit":true,"latency_us":1}"#,
-            r#"{"msg":"request complete","path":"/x","cache_hit":false,"latency_us":1}"#,
-            r#"{"msg":"request complete","path":"/x","cache_hit":false,"latency_us":1}"#,
+            r#"{"timestamp":"2024-01-01T00:00:00Z","level":"DEBUG","fields":{"message":"request complete","path":"/x","cache_hit":true,"latency_ns":1000},"target":"m6_http"}"#,
+            r#"{"timestamp":"2024-01-01T00:00:00Z","level":"DEBUG","fields":{"message":"request complete","path":"/x","cache_hit":true,"latency_ns":1000},"target":"m6_http"}"#,
+            r#"{"timestamp":"2024-01-01T00:00:00Z","level":"DEBUG","fields":{"message":"request complete","path":"/x","cache_hit":false,"latency_ns":1000},"target":"m6_http"}"#,
+            r#"{"timestamp":"2024-01-01T00:00:00Z","level":"DEBUG","fields":{"message":"request complete","path":"/x","cache_hit":false,"latency_ns":1000},"target":"m6_http"}"#,
         ]);
         let v = routes_blob(&path, 1000);
         let routes = v["routes"].as_array().unwrap();
@@ -223,8 +223,8 @@ mod routes_tests {
     fn sample_window_secs_computed_from_timestamps() {
         let dir = tmp();
         let path = write_log(&dir, &[
-            r#"{"msg":"request complete","path":"/","ts":"2024-01-01T00:00:00Z","cache_hit":false,"latency_us":1}"#,
-            r#"{"msg":"request complete","path":"/","ts":"2024-01-01T00:01:00Z","cache_hit":false,"latency_us":1}"#,
+            r#"{"timestamp":"2024-01-01T00:00:00Z","level":"DEBUG","fields":{"message":"request complete","path":"/","cache_hit":false,"latency_ns":1000},"target":"m6_http"}"#,
+            r#"{"timestamp":"2024-01-01T00:01:00Z","level":"DEBUG","fields":{"message":"request complete","path":"/","cache_hit":false,"latency_ns":1000},"target":"m6_http"}"#,
         ]);
         let v = routes_blob(&path, 1000);
         let window = v["sample_window_secs"].as_u64().expect("sample_window_secs should be a number");
@@ -234,10 +234,10 @@ mod routes_tests {
     #[test]
     fn sample_window_secs_null_without_timestamps() {
         let dir = tmp();
-        // Entries without ts fields — window must be null.
+        // Entries without timestamp fields — window must be null.
         let path = write_log(&dir, &[
-            r#"{"msg":"request complete","path":"/","cache_hit":false,"latency_us":1}"#,
-            r#"{"msg":"request complete","path":"/","cache_hit":false,"latency_us":1}"#,
+            r#"{"level":"DEBUG","fields":{"message":"request complete","path":"/","cache_hit":false,"latency_ns":1000},"target":"m6_http"}"#,
+            r#"{"level":"DEBUG","fields":{"message":"request complete","path":"/","cache_hit":false,"latency_ns":1000},"target":"m6_http"}"#,
         ]);
         let v = routes_blob(&path, 1000);
         assert!(v["sample_window_secs"].is_null(), "expected null when no timestamps present");
@@ -245,14 +245,14 @@ mod routes_tests {
 
     #[test]
     fn zero_latency_entries_do_not_panic() {
-        // All zero latency_us values — avg should be 0.
+        // All zero latency_ns values — avg should be 0.
         let dir = tmp();
         let path = write_log(&dir, &[
-            r#"{"msg":"request complete","path":"/","cache_hit":false,"latency_us":0}"#,
+            r#"{"timestamp":"2024-01-01T00:00:00Z","level":"DEBUG","fields":{"message":"request complete","path":"/","cache_hit":false,"latency_ns":0},"target":"m6_http"}"#,
         ]);
         let v = routes_blob(&path, 1000);
         let routes = v["routes"].as_array().unwrap();
-        assert_eq!(routes[0]["avg_latency_us"], 0);
+        assert_eq!(routes[0]["avg_latency_ns"], 0);
     }
 }
 
@@ -441,7 +441,7 @@ mod logs_tests {
     #[test]
     fn missing_log_returns_error_key() {
         let dir = tmp();
-        let v = logs_blob(&dir.path().join("no.log"), 100);
+        let v = logs_blob(&dir.path().join("no.log"), 100, None);
         assert!(v["error"].is_string());
     }
 
@@ -449,7 +449,7 @@ mod logs_tests {
     fn empty_log_returns_zero_lines() {
         let dir = tmp();
         let path = write_log(&dir, 0);
-        let v = logs_blob(&path, 100);
+        let v = logs_blob(&path, 100, None);
         assert_eq!(v["total_lines"], 0);
         assert!(v["lines"].as_array().unwrap().is_empty());
     }
@@ -458,7 +458,7 @@ mod logs_tests {
     fn returns_all_lines_when_fewer_than_n() {
         let dir = tmp();
         let path = write_log(&dir, 5);
-        let v = logs_blob(&path, 100);
+        let v = logs_blob(&path, 100, None);
         assert_eq!(v["total_lines"], 5);
         assert_eq!(v["lines"].as_array().unwrap().len(), 5);
     }
@@ -467,7 +467,7 @@ mod logs_tests {
     fn returns_last_n_lines() {
         let dir = tmp();
         let path = write_log(&dir, 10);
-        let v = logs_blob(&path, 3);
+        let v = logs_blob(&path, 3, None);
         assert_eq!(v["total_lines"], 10);
         let lines = v["lines"].as_array().unwrap();
         assert_eq!(lines.len(), 3);
@@ -479,7 +479,7 @@ mod logs_tests {
     fn n_larger_than_file_returns_all() {
         let dir = tmp();
         let path = write_log(&dir, 3);
-        let v = logs_blob(&path, 1000);
+        let v = logs_blob(&path, 1000, None);
         assert_eq!(v["lines"].as_array().unwrap().len(), 3);
     }
 
@@ -489,7 +489,7 @@ mod logs_tests {
         // Write specific named lines.
         let p = dir.path().join("specific.log");
         fs::write(&p, "alpha\nbeta\ngamma\n").unwrap();
-        let v = logs_blob(&p, 100);
+        let v = logs_blob(&p, 100, None);
         let lines = v["lines"].as_array().unwrap();
         assert_eq!(lines[0].as_str().unwrap(), "alpha");
         assert_eq!(lines[1].as_str().unwrap(), "beta");

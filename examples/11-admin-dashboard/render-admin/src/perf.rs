@@ -5,13 +5,6 @@ use std::path::Path;
 
 // ── Periodic-stats history ────────────────────────────────────────────────────
 
-/// Parse the last `n` "periodic stats" entries from the m6-http JSON-lines log.
-/// Returns:
-/// {
-///   "history": [ { "ts", "rps_avg", "rps_peak", "latency_p50_us", "latency_p99_us",
-///                  "cache_hits", "cache_misses", "cache_hit_rate",
-///                  "backend_errors", "pool_members" }, ... ]
-/// }
 pub fn perf_blob(log_path: &Path, n: usize) -> Value {
     let history = read_periodic_stats(log_path, n);
     json!({ "history": history })
@@ -26,19 +19,31 @@ fn read_periodic_stats(log_path: &Path, n: usize) -> Vec<Value> {
     let mut entries: Vec<Value> = text
         .lines()
         .filter_map(|line| serde_json::from_str::<Value>(line).ok())
-        .filter(|v| v.get("msg").and_then(Value::as_str) == Some("periodic stats"))
-        .map(|v| json!({
-            "ts":             v["ts"],
-            "rps_avg":        v["rps_avg"],
-            "rps_peak":       v["rps_peak"],
-            "latency_p50_us": v["latency_p50_us"],
-            "latency_p99_us": v["latency_p99_us"],
-            "cache_hits":     v["cache_hits"],
-            "cache_misses":   v["cache_misses"],
-            "cache_hit_rate": v["cache_hit_rate"],
-            "backend_errors": v["backend_errors"],
-            "pool_members":   v["pool_members"],
-        }))
+        .filter(|v| v["fields"]["message"].as_str() == Some("periodic stats"))
+        .map(|v| {
+            let f = &v["fields"];
+            json!({
+                "ts":             v["timestamp"],
+                "requests":       f["requests"],
+                "rps_avg":        f["rps_avg"],
+                "rps_peak":       f["rps_peak"],
+                "cache_hits":     f["cache_hits"],
+                "cache_misses":   f["cache_misses"],
+                "cache_hit_rate": f["cache_hit_rate"].as_str()
+                    .and_then(|s| s.parse::<f64>().ok())
+                    .unwrap_or(f["cache_hit_rate"].as_f64().unwrap_or(0.0)),
+                "backend_errors": f["backend_errors"],
+                "pool_members":   f["pool_members"],
+                "hit_p0_ns":      f["hit_p0_ns"],
+                "hit_p50_ns":     f["hit_p50_ns"],
+                "hit_p99_ns":     f["hit_p99_ns"],
+                "hit_max_ns":     f["hit_max_ns"],
+                "miss_p0_ns":     f["miss_p0_ns"],
+                "miss_p50_ns":    f["miss_p50_ns"],
+                "miss_p99_ns":    f["miss_p99_ns"],
+                "miss_max_ns":    f["miss_max_ns"],
+            })
+        })
         .collect();
 
     if entries.len() > n {
@@ -49,115 +54,356 @@ fn read_periodic_stats(log_path: &Path, n: usize) -> Vec<Value> {
 
 // ── Per-route stats ───────────────────────────────────────────────────────────
 
-/// Parse the last `sample` "request complete" log entries and aggregate per-route stats.
-/// Returns:
-/// {
-///   "sample_requests": 1000,
-///   "sample_window_secs": 42,       // wall time covered by the sample (null if unknown)
-///   "routes": [
-///     {
-///       "path":         "/blog",
-///       "requests":     820,
-///       "cache_hits":   710,
-///       "cache_misses": 110,
-///       "hit_rate":     0.866,
-///       "avg_latency_us": 240
-///     }, ...
-///   ]
-/// }
 pub fn routes_blob(log_path: &Path, sample: usize) -> Value {
-    let text = match fs::read_to_string(log_path) {
+    let entries = load_request_complete(log_path, Some(sample), None);
+    aggregate_routes(&entries)
+}
+
+// ── Per-backend stats ─────────────────────────────────────────────────────────
+
+/// Summary of all backends — used for the topology diagram.
+/// Returns site config metadata plus per-backend stats from the last `sample_n` requests.
+pub fn backends_summary_blob(log_path: &Path, site_toml: &Path, sample_n: usize) -> Value {
+    // ── Parse site.toml for topology metadata ──────────────────────────────
+    let (site_name, bind, backend_route_map) = parse_site_topology(site_toml);
+
+    // Build reverse map: path → backend name
+    let mut path_to_backend: HashMap<String, String> = HashMap::new();
+    for (backend, paths) in &backend_route_map {
+        for p in paths {
+            path_to_backend.insert(p.clone(), backend.clone());
+        }
+    }
+
+    // ── Partition request-complete log entries by backend ─────────────────
+    let entries = load_request_complete(log_path, Some(sample_n), None);
+
+    let mut by_backend: HashMap<String, Vec<&Value>> = HashMap::new();
+    for backend in backend_route_map.keys() {
+        by_backend.entry(backend.clone()).or_default();
+    }
+    for entry in &entries {
+        let path = entry["fields"]["path"].as_str().unwrap_or("");
+        if let Some(backend) = path_to_backend.get(path) {
+            by_backend.entry(backend.clone()).or_default().push(entry);
+        }
+    }
+
+    // ── Build per-backend summary, preserving site.toml declaration order ─
+    let mut backend_names: Vec<String> = backend_route_map.keys().cloned().collect();
+    backend_names.sort(); // deterministic order
+
+    let backends: Vec<Value> = backend_names.iter().map(|name| {
+        let ents  = by_backend.get(name).map(|v| v.as_slice()).unwrap_or(&[]);
+        let s     = compute_stats(ents);
+        let routes = backend_route_map.get(name).cloned().unwrap_or_default();
+        json!({
+            "name":           name,
+            "routes":         routes,          // paths handled by this backend
+            "requests":       s.requests,
+            "cache_hits":     s.cache_hits,
+            "cache_misses":   s.cache_misses,
+            "hit_rate":       s.hit_rate,
+            "miss_rate":      s.miss_rate,
+            "hit_p50_ns":     s.hit_pcts[3],   // index 3 = p50
+            "avg_latency_ns": s.avg_latency_ns,
+        })
+    }).collect();
+
+    let window_secs = ts_diff_secs(
+        entries.first().and_then(|v| v["timestamp"].as_str()),
+        entries.last().and_then(|v| v["timestamp"].as_str()),
+    );
+
+    json!({
+        "site_name":          site_name,
+        "bind":               bind,
+        "backends":           backends,
+        "sample_n":           entries.len(),
+        "sample_window_secs": window_secs,
+    })
+}
+
+/// Parse site.toml and return (site_name, bind_addr, backend→[paths] map).
+fn parse_site_topology(site_toml: &Path) -> (String, String, HashMap<String, Vec<String>>) {
+    let empty = (
+        "m6-http".to_string(),
+        "unknown".to_string(),
+        HashMap::new(),
+    );
+    let text = match fs::read_to_string(site_toml) {
         Ok(t) => t,
-        Err(_) => return json!({ "sample_requests": 0, "sample_window_secs": null, "routes": [] }),
+        Err(_) => return empty,
+    };
+    let parsed: toml::Value = match toml::from_str(&text) {
+        Ok(v) => v,
+        Err(_) => return empty,
     };
 
-    // Collect the last `sample` "request complete" entries.
-    let entries: Vec<Value> = text
+    let site_name = parsed.get("site")
+        .and_then(|s| s.get("name"))
+        .and_then(|n| n.as_str())
+        .unwrap_or("m6-http")
+        .to_string();
+
+    let bind = parsed.get("server")
+        .and_then(|s| s.get("bind"))
+        .and_then(|b| b.as_str())
+        .unwrap_or("unknown")
+        .to_string();
+
+    let mut map: HashMap<String, Vec<String>> = HashMap::new();
+
+    // Collect all declared backend names (preserves backends with zero traffic).
+    if let Some(backends) = parsed.get("backend").and_then(|b| b.as_array()) {
+        for b in backends {
+            if let Some(name) = b.get("name").and_then(|n| n.as_str()) {
+                map.entry(name.to_string()).or_default();
+            }
+        }
+    }
+
+    // Map routes → backends.
+    if let Some(routes) = parsed.get("route").and_then(|r| r.as_array()) {
+        for route in routes {
+            let path    = route.get("path").and_then(|p| p.as_str()).unwrap_or("").to_string();
+            let backend = route.get("backend").and_then(|b| b.as_str()).unwrap_or("").to_string();
+            if !path.is_empty() && !backend.is_empty() {
+                map.entry(backend).or_default().push(path);
+            }
+        }
+    }
+
+    (site_name, bind, map)
+}
+
+/// Detailed stats for a single backend, limited to the last `limit` matching entries.
+/// Pass `limit = usize::MAX` for "all-time" (capped at 100_000 for performance).
+pub fn backend_stats_blob(
+    log_path: &Path,
+    site_toml: &Path,
+    backend_name: &str,
+    limit: usize,
+) -> Value {
+    let (_, _, backend_paths) = parse_site_topology(site_toml);
+    let paths = match backend_paths.get(backend_name) {
+        Some(p) => p.clone(),
+        None => return json!({ "error": format!("unknown backend: {backend_name}") }),
+    };
+
+    let cap = limit.min(100_000);
+    let entries = load_request_complete(log_path, Some(cap), Some(&paths));
+    let s = compute_stats(&entries.iter().collect::<Vec<_>>());
+
+    // Per-route breakdown
+    let mut by_path: HashMap<String, RouteStats> = HashMap::new();
+    for v in &entries {
+        let f = &v["fields"];
+        let path = f["path"].as_str().unwrap_or("/").to_string();
+        let cache_hit = f["cache_hit"].as_bool().unwrap_or(false);
+        let latency = f["latency_ns"].as_u64().unwrap_or(0);
+        let rs = by_path.entry(path).or_default();
+        rs.requests += 1;
+        rs.latency_sum += latency;
+        if cache_hit { rs.cache_hits += 1; }
+    }
+    let mut routes: Vec<Value> = by_path.into_iter().map(|(path, rs)| {
+        let hit_rate = if rs.requests > 0 { rs.cache_hits as f64 / rs.requests as f64 } else { 0.0 };
+        let avg_lat  = if rs.requests > 0 { rs.latency_sum / rs.requests } else { 0 };
+        json!({
+            "path":           path,
+            "requests":       rs.requests,
+            "cache_hits":     rs.cache_hits,
+            "cache_misses":   rs.requests - rs.cache_hits,
+            "hit_rate":       (hit_rate * 1000.0).round() / 1000.0,
+            "avg_latency_ns": avg_lat,
+        })
+    }).collect();
+    routes.sort_by(|a, b| b["requests"].as_u64().unwrap_or(0).cmp(&a["requests"].as_u64().unwrap_or(0)));
+
+    let window_secs = ts_diff_secs(
+        entries.first().and_then(|v| v["timestamp"].as_str()),
+        entries.last().and_then(|v| v["timestamp"].as_str()),
+    );
+
+    json!({
+        "backend":            backend_name,
+        "requests":           s.requests,
+        "cache_hits":         s.cache_hits,
+        "cache_misses":       s.cache_misses,
+        "hit_rate":           s.hit_rate,
+        "miss_rate":          s.miss_rate,
+        "avg_latency_ns":     s.avg_latency_ns,
+        "hit_latency_pcts":   s.hit_pcts,    // [p0,p10,p25,p50,p75,p90,p99,max]
+        "miss_latency_pcts":  s.miss_pcts,
+        "pct_labels":         ["p0","p10","p25","p50","p75","p90","p99","max"],
+        "sample_requests":    entries.len(),
+        "sample_window_secs": window_secs,
+        "routes":             routes,
+    })
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+#[derive(Default)]
+struct RouteStats {
+    requests: u64,
+    cache_hits: u64,
+    latency_sum: u64,
+}
+
+struct AggStats {
+    requests: u64,
+    cache_hits: u64,
+    cache_misses: u64,
+    hit_rate: f64,
+    miss_rate: f64,
+    avg_latency_ns: u64,
+    hit_pcts: [u64; 8],   // p0,p10,p25,p50,p75,p90,p99,max
+    miss_pcts: [u64; 8],
+}
+
+fn compute_stats(entries: &[&Value]) -> AggStats {
+    let mut requests = 0u64;
+    let mut cache_hits = 0u64;
+    let mut latency_sum = 0u64;
+    let mut hit_lats: Vec<u64> = Vec::new();
+    let mut miss_lats: Vec<u64> = Vec::new();
+
+    for v in entries {
+        let f = &v["fields"];
+        let cache_hit = f["cache_hit"].as_bool().unwrap_or(false);
+        let latency   = f["latency_ns"].as_u64().unwrap_or(0);
+        requests += 1;
+        latency_sum += latency;
+        if cache_hit {
+            cache_hits += 1;
+            if latency > 0 { hit_lats.push(latency); }
+        } else {
+            if latency > 0 { miss_lats.push(latency); }
+        }
+    }
+
+    let cache_misses = requests.saturating_sub(cache_hits);
+    let hit_rate  = if requests > 0 { cache_hits  as f64 / requests as f64 } else { 0.0 };
+    let miss_rate = if requests > 0 { cache_misses as f64 / requests as f64 } else { 0.0 };
+    let avg_latency_ns = if requests > 0 { latency_sum / requests } else { 0 };
+
+    hit_lats.sort_unstable();
+    miss_lats.sort_unstable();
+
+    AggStats {
+        requests, cache_hits, cache_misses,
+        hit_rate:  (hit_rate  * 1000.0).round() / 1000.0,
+        miss_rate: (miss_rate * 1000.0).round() / 1000.0,
+        avg_latency_ns,
+        hit_pcts:  eight_pcts(&hit_lats),
+        miss_pcts: eight_pcts(&miss_lats),
+    }
+}
+
+/// Compute [p0,p10,p25,p50,p75,p90,p99,max] from a sorted slice.
+fn eight_pcts(sorted: &[u64]) -> [u64; 8] {
+    if sorted.is_empty() { return [0; 8]; }
+    let n = sorted.len() - 1;
+    let p = |pct: usize| sorted[n * pct / 100];
+    [p(0), p(10), p(25), p(50), p(75), p(90), p(99), sorted[sorted.len() - 1]]
+}
+
+/// Read "request complete" entries from the log.
+/// - `limit`: keep at most this many (most recent first is preserved; None = no cap).
+/// - `path_filter`: if Some, only include entries whose path is in the set.
+fn load_request_complete(
+    log_path: &Path,
+    limit: Option<usize>,
+    path_filter: Option<&[String]>,
+) -> Vec<Value> {
+    let text = match fs::read_to_string(log_path) {
+        Ok(t) => t,
+        Err(_) => return vec![],
+    };
+
+    let filter_set: Option<std::collections::HashSet<&str>> =
+        path_filter.map(|paths| paths.iter().map(|s| s.as_str()).collect());
+
+    let all: Vec<Value> = text
         .lines()
         .filter_map(|line| serde_json::from_str::<Value>(line).ok())
-        .filter(|v| v.get("msg").and_then(Value::as_str) == Some("request complete"))
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .take(sample)
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
+        .filter(|v| {
+            let msg = v["fields"]["message"].as_str().unwrap_or("");
+            msg == "request complete" || msg.starts_with("request complete")
+        })
+        .filter(|v| {
+            if let Some(ref set) = filter_set {
+                let path = v["fields"]["path"].as_str().unwrap_or("");
+                set.contains(path)
+            } else {
+                true
+            }
+        })
         .collect();
 
+    if let Some(n) = limit {
+        if all.len() > n {
+            return all[all.len() - n..].to_vec();
+        }
+    }
+    all
+}
+
+fn aggregate_routes(entries: &[Value]) -> Value {
     let sample_requests = entries.len();
+    let first_ts = entries.first().and_then(|v| v["timestamp"].as_str());
+    let last_ts  = entries.last().and_then(|v| v["timestamp"].as_str());
+    let window_secs = ts_diff_secs(first_ts, last_ts);
 
-    // Determine time window from first/last ts (if present).
-    let first_ts = entries.first().and_then(|v| v["ts"].as_str()).map(|s| s.to_string());
-    let last_ts  = entries.last().and_then(|v| v["ts"].as_str()).map(|s| s.to_string());
-    let window_secs = ts_diff_secs(first_ts.as_deref(), last_ts.as_deref());
+    struct Rs { requests: u64, cache_hits: u64, latency_sum: u64 }
+    let mut by_path: HashMap<String, Rs> = HashMap::new();
 
-    // Aggregate per-path.
-    struct RouteStats { requests: u64, cache_hits: u64, latency_sum: u64 }
-    let mut by_path: HashMap<String, RouteStats> = HashMap::new();
-
-    for v in &entries {
-        let path = v["path"].as_str().unwrap_or("/").to_string();
-        let cache_hit = v["cache_hit"].as_bool().unwrap_or(false);
-        let latency = v["latency_us"].as_u64().unwrap_or(0);
-
-        let s = by_path.entry(path).or_insert(RouteStats { requests: 0, cache_hits: 0, latency_sum: 0 });
-        s.requests   += 1;
+    for v in entries {
+        let f = &v["fields"];
+        let path      = f["path"].as_str().unwrap_or("/").to_string();
+        let cache_hit = f["cache_hit"].as_bool().unwrap_or(false);
+        let latency   = f["latency_ns"].as_u64().unwrap_or(0);
+        let s = by_path.entry(path).or_insert(Rs { requests: 0, cache_hits: 0, latency_sum: 0 });
+        s.requests    += 1;
         s.latency_sum += latency;
         if cache_hit { s.cache_hits += 1; }
     }
 
-    let mut routes: Vec<Value> = by_path
-        .into_iter()
-        .map(|(path, s)| {
-            let misses   = s.requests - s.cache_hits;
-            let hit_rate = if s.requests > 0 { s.cache_hits as f64 / s.requests as f64 } else { 0.0 };
-            let avg_lat  = if s.requests > 0 { s.latency_sum / s.requests } else { 0 };
-            json!({
-                "path":           path,
-                "requests":       s.requests,
-                "cache_hits":     s.cache_hits,
-                "cache_misses":   misses,
-                "hit_rate":       (hit_rate * 1000.0).round() / 1000.0,
-                "avg_latency_us": avg_lat,
-            })
+    let mut routes: Vec<Value> = by_path.into_iter().map(|(path, s)| {
+        let misses   = s.requests - s.cache_hits;
+        let hit_rate = if s.requests > 0 { s.cache_hits as f64 / s.requests as f64 } else { 0.0 };
+        let avg_lat  = if s.requests > 0 { s.latency_sum / s.requests } else { 0 };
+        json!({
+            "path":           path,
+            "requests":       s.requests,
+            "cache_hits":     s.cache_hits,
+            "cache_misses":   misses,
+            "hit_rate":       (hit_rate * 1000.0).round() / 1000.0,
+            "avg_latency_ns": avg_lat,
         })
-        .collect();
+    }).collect();
 
-    // Sort by request count descending.
-    routes.sort_by(|a, b| {
-        b["requests"].as_u64().unwrap_or(0)
-            .cmp(&a["requests"].as_u64().unwrap_or(0))
-    });
-
-    json!({
-        "sample_requests":   sample_requests,
-        "sample_window_secs": window_secs,
-        "routes": routes,
-    })
+    routes.sort_by(|a, b| b["requests"].as_u64().unwrap_or(0).cmp(&a["requests"].as_u64().unwrap_or(0)));
+    json!({ "sample_requests": sample_requests, "sample_window_secs": window_secs, "routes": routes })
 }
 
-/// Parse two RFC-3339-ish timestamps and return their difference in seconds, if possible.
+/// Parse two RFC-3339-ish timestamps and return their difference in seconds.
 fn ts_diff_secs(first: Option<&str>, last: Option<&str>) -> Option<u64> {
     let parse = |s: &str| -> Option<u64> {
-        // Expect "YYYY-MM-DDTHH:MM:SS" or similar — just parse up to seconds.
-        let s = s.trim_end_matches('Z');
-        let s = s.get(..19)?; // "YYYY-MM-DDTHH:MM:SS"
+        let s = s.trim_end_matches('Z').get(..19)?;
         let parts: Vec<&str> = s.splitn(2, 'T').collect();
         if parts.len() != 2 { return None; }
         let date: Vec<u32> = parts[0].splitn(3, '-').filter_map(|x| x.parse().ok()).collect();
         let time: Vec<u32> = parts[1].splitn(3, ':').filter_map(|x| x.parse().ok()).collect();
         if date.len() < 3 || time.len() < 3 { return None; }
-        // Rough seconds-since-epoch (ignoring leap seconds and timezone).
         let y = date[0] as u64; let mo = date[1] as u64; let d = date[2] as u64;
-        let h = time[0] as u64; let m  = time[1] as u64; let s_  = time[2] as u64;
-        // Days since 1970-01-01 (approximate).
-        let years_since_1970 = y.saturating_sub(1970);
-        let days = years_since_1970 * 365 + years_since_1970 / 4
-            + (mo.saturating_sub(1)) * 30 + d;
+        let h = time[0] as u64; let m   = time[1] as u64; let s_ = time[2] as u64;
+        let years = y.saturating_sub(1970);
+        let days = years * 365 + years / 4 + (mo.saturating_sub(1)) * 30 + d;
         Some(days * 86400 + h * 3600 + m * 60 + s_)
     };
-
     let t0 = parse(first?)?;
     let t1 = parse(last?)?;
     Some(t1.saturating_sub(t0))

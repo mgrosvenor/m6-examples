@@ -120,8 +120,11 @@ fn run_bench_job(
         .arg("--concurrency").arg(concurrency.to_string())
         .arg("--skip-verify");
 
-    if proto != "all" {
-        cmd.arg("--proto").arg(&proto);
+    match proto.as_str() {
+        "h1" => { cmd.arg("--http11-only"); }
+        "h2" => { cmd.arg("--http2-only"); }
+        "h3" => { cmd.arg("--http3-only"); }
+        _    => {} // "all" — run all protocols
     }
 
     let result = cmd.output();

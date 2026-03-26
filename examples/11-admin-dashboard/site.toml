@@ -14,8 +14,13 @@ tls_key  = "keys/dev-key.pem"
 backend    = "auth"
 public_key = "keys/auth.pub"
 
+[errors]
+mode             = "internal"
+verbose_fallback = true
+
 [log]
-level = "info"
+level  = "debug"
+format = "json"
 
 [[backend]]
 name    = "render-admin"
@@ -33,6 +38,12 @@ sockets = "/tmp/m6/m6-file-admin.sock"
 path    = "/"
 backend = "static"
 cache   = "public, max-age=3600"
+
+# Login redirect target — serves the SPA which has its own login overlay.
+[[route]]
+path    = "/login"
+backend = "static"
+cache   = "no-store"
 
 # Admin API routes — all require role:admin
 [[route]]
@@ -91,6 +102,24 @@ cache   = "no-store"
 
 [[route]]
 path    = "/api/admin/services/{name}/restart"
+backend = "render-admin"
+require = "role:admin"
+cache   = "no-store"
+
+[[route]]
+path    = "/api/admin/backends"
+backend = "render-admin"
+require = "role:admin"
+cache   = "no-store"
+
+[[route]]
+path    = "/api/admin/backends/{name}/sample"
+backend = "render-admin"
+require = "role:admin"
+cache   = "no-store"
+
+[[route]]
+path    = "/api/admin/backends/{name}/alltime"
 backend = "render-admin"
 require = "role:admin"
 cache   = "no-store"
