@@ -184,6 +184,13 @@ fn parse_site_topology(site_toml: &Path) -> (String, String, HashMap<String, Vec
     (site_name, bind, map)
 }
 
+/// Aggregate stats for m6-http itself (all paths, no backend filter).
+pub fn m6http_stats_blob(log_path: &Path, limit: usize) -> Value {
+    let cap = limit.min(100_000);
+    let entries = load_request_complete(log_path, Some(cap), None);
+    build_stats_blob("m6-http", &entries)
+}
+
 /// Detailed stats for a single backend, limited to the last `limit` matching entries.
 /// Pass `limit = usize::MAX` for "all-time" (capped at 100_000 for performance).
 pub fn backend_stats_blob(
@@ -200,11 +207,14 @@ pub fn backend_stats_blob(
 
     let cap = limit.min(100_000);
     let entries = load_request_complete(log_path, Some(cap), Some(&paths));
+    build_stats_blob(backend_name, &entries)
+}
+
+fn build_stats_blob(name: &str, entries: &[Value]) -> Value {
     let s = compute_stats(&entries.iter().collect::<Vec<_>>());
 
-    // Per-route breakdown
     let mut by_path: HashMap<String, RouteStats> = HashMap::new();
-    for v in &entries {
+    for v in entries {
         let f = &v["fields"];
         let path = f["path"].as_str().unwrap_or("/").to_string();
         let cache_hit = f["cache_hit"].as_bool().unwrap_or(false);
@@ -234,14 +244,14 @@ pub fn backend_stats_blob(
     );
 
     json!({
-        "backend":            backend_name,
+        "backend":            name,
         "requests":           s.requests,
         "cache_hits":         s.cache_hits,
         "cache_misses":       s.cache_misses,
         "hit_rate":           s.hit_rate,
         "miss_rate":          s.miss_rate,
         "avg_latency_ns":     s.avg_latency_ns,
-        "hit_latency_pcts":   s.hit_pcts,    // [p0,p10,p25,p50,p75,p90,p99,max]
+        "hit_latency_pcts":   s.hit_pcts,
         "miss_latency_pcts":  s.miss_pcts,
         "pct_labels":         ["p0","p10","p25","p50","p75","p90","p99","max"],
         "sample_requests":    entries.len(),

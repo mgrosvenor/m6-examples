@@ -207,6 +207,16 @@ fn handle_backend_alltime(req: &Request, g: &Global) -> m6_render::Result<Respon
     Ok(Response::json(perf::backend_stats_blob(&g.log_file, &g.site_toml, name, usize::MAX)))
 }
 
+fn handle_m6http_sample(req: &Request, g: &Global) -> m6_render::Result<Response> {
+    let n = req.dict().get("n").and_then(Value::as_str)
+        .and_then(|s| s.parse::<usize>().ok()).unwrap_or(g.routes_sample);
+    Ok(Response::json(perf::m6http_stats_blob(&g.log_file, n)))
+}
+
+fn handle_m6http_alltime(_req: &Request, g: &Global) -> m6_render::Result<Response> {
+    Ok(Response::json(perf::m6http_stats_blob(&g.log_file, usize::MAX)))
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 fn main() {
@@ -239,6 +249,8 @@ fn main() {
         .route_get("/api/admin/backends",                    handle_backends_summary)
         .route_get("/api/admin/backends/{name}/sample",      handle_backend_sample)
         .route_get("/api/admin/backends/{name}/alltime",     handle_backend_alltime)
+        .route_get("/api/admin/m6http/sample",               handle_m6http_sample)
+        .route_get("/api/admin/m6http/alltime",              handle_m6http_alltime)
         .run()
         .unwrap_or_else(|e| {
             eprintln!("render-admin error: {e}");

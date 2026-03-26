@@ -616,7 +616,7 @@ function drawTopologySVG(data) {
 
   const httpLines = [httpBind, rpsAvg, rpsPeak, hitRate, missLine, latLine].filter(Boolean);
   const hHttp = nodeH(httpLines.length);
-  svg.appendChild(drawNode(cxL, cyL, hHttp, 'm6-http', httpLines, TOPO_COLOR.ok, null));
+  svg.appendChild(drawNode(cxL, cyL, hHttp, 'm6-http', httpLines, TOPO_COLOR.ok, 'm6-http'));
 
   // ── Backend nodes + edges — structure from site.toml [[backend]] / [[route]] ─
   const hBe = nodeH(3);
@@ -686,7 +686,10 @@ async function fetchAndRenderDetail(name, mode) {
   const body = $('topo-detail-body');
   body.innerHTML = '<p style="color:var(--muted);font-size:.85rem;padding:.5rem 0">Loading…</p>';
   try {
-    const data = await api('GET', `/backends/${encodeURIComponent(name)}/${mode}`);
+    const url = name === 'm6-http'
+      ? `/m6http/${mode}`
+      : `/backends/${encodeURIComponent(name)}/${mode}`;
+    const data = await api('GET', url);
     body.dataset.loaded = name;
     renderDetailContent(data, mode);
   } catch(e) {

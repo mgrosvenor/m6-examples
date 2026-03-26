@@ -124,6 +124,18 @@ backend = "render-admin"
 require = "role:admin"
 cache   = "no-store"
 
+[[route]]
+path    = "/api/admin/m6http/sample"
+backend = "render-admin"
+require = "role:admin"
+cache   = "no-store"
+
+[[route]]
+path    = "/api/admin/m6http/alltime"
+backend = "render-admin"
+require = "role:admin"
+cache   = "no-store"
+
 # Auth endpoints
 [[route]]
 path    = "/auth/login"
