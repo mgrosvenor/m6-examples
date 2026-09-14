@@ -59,14 +59,30 @@ fi
 # ── Auth keys ─────────────────────────────────────────────────────────────────
 if [ ! -f "$SITE/keys/auth.pem" ]; then
     info "Generating auth signing keys..."
-    openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "$SITE/keys/auth.pem"
+    # `ec_param_enc:named_curve` is not redundant: macOS's LibreSSL writes explicit
+    # curve parameters where OpenSSL writes the prime256v1 OID, and the token signer
+    # only accepts the named form. Without it every login on a Mac fails with
+    # "JWT encode error: InvalidEcdsaKey" even with the right password. The long
+    # version is in examples/05-cms/setup.sh.
+    openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -pkeyopt ec_param_enc:named_curve -out "$SITE/keys/auth.pem"
     openssl pkey -in "$SITE/keys/auth.pem" -pubout -out "$SITE/keys/auth.pub"
     chmod 600 "$SITE/keys/auth.pem"
 fi
 
 # ── Auth database ─────────────────────────────────────────────────────────────
+#
+# BOTH paths are checked, and that is not belt and braces. `configs/m6-auth.conf`
+# says `path = "data/auth.db"`, and m6-auth-server resolves that relative to the
+# CONFIG FILE's directory, not the site root, so the database is created at
+# configs/data/auth.db. This script only looked at $SITE/data/auth.db, which is
+# never written, so every run after the first ran `user add admin` again, got
+# "error: username 'admin' already exists", and died under `set -e` before
+# starting anything. Stopping the example and running ./dev.sh again left a
+# reader with nothing running and an error about a user they did not create.
+#
+# 04-auth and 07-dev-to-production already checked both. This one was missed.
 mkdir -p "$SITE/data"
-if [ ! -f "$SITE/data/auth.db" ]; then
+if [ ! -f "$SITE/configs/data/auth.db" ] && [ ! -f "$SITE/data/auth.db" ]; then
     info "Creating admin user (password: admin)..."
     m6-auth-cli "$SITE/configs/m6-auth.conf" user add admin --password admin
     m6-auth-cli "$SITE/configs/m6-auth.conf" group add editors

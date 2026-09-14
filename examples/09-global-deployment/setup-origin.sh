@@ -24,7 +24,12 @@ mkdir -p /etc/m6
 
 # Auth signing keys
 if [ ! -f /etc/m6/auth.pem ]; then
-    openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out /etc/m6/auth.pem
+    # `ec_param_enc:named_curve` is not redundant: macOS's LibreSSL writes explicit
+    # curve parameters where OpenSSL writes the prime256v1 OID, and the token signer
+    # only accepts the named form. Without it every login on a Mac fails with
+    # "JWT encode error: InvalidEcdsaKey" even with the right password. The long
+    # version is in examples/05-cms/setup.sh.
+    openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -pkeyopt ec_param_enc:named_curve -out /etc/m6/auth.pem
     openssl pkey -in /etc/m6/auth.pem -pubout -out /etc/m6/auth.pub
     chmod 600 /etc/m6/auth.pem
     chown m6:m6 /etc/m6/auth.pem /etc/m6/auth.pub
