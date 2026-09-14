@@ -122,6 +122,34 @@ check_nonempty() {
     if [[ -n "$2" ]]; then pass "$1 ($2)"; else fail "$1 — absent"; fi
 }
 
+# wait_for <label> <max-seconds> <snippet>
+#
+# Polls until the snippet exits 0, then passes and says how long it took; fails
+# when the budget is gone. Replaces `sleep 2`.
+#
+# Publishing writes a JSON file, rebuilds the index and touches site.toml, and
+# m6-http and m6-html then reload. How long that takes depends on the machine.
+# A fixed sleep encodes one machine's answer: 2 seconds was enough on a laptop
+# and not on m6's build host under load, where this suite reported that a
+# published post was neither listed nor served -- a real-looking defect that was
+# nothing but the test not waiting. Polling states the actual requirement, which
+# is that it happens, and keeps a generous ceiling so a genuine failure to
+# publish still fails.
+wait_for() {
+    local label="$1" max="$2" snippet="$3"
+    local tries=$(( max * 2 )) i=0
+    while [ "$i" -lt "$tries" ]; do
+        if eval "$snippet" >/dev/null 2>&1; then
+            pass "$label (after $(( i * 5 / 10 )).$(( i * 5 % 10 ))s)"
+            return 0
+        fi
+        i=$(( i + 1 ))
+        sleep 0.5
+    done
+    fail "$label — still not true after ${max}s"
+    return 1
+}
+
 code()  { "${CURL[@]}" -o /dev/null -w '%{http_code}' "$@"; }
 body()  { "${CURL[@]}" "$@"; }
 # Response headers with the header NAME lowercased and CRs stripped, because
@@ -438,8 +466,9 @@ pubcode="${pubresp##*$'\n'}"
 check "POST /api/publish/<stem>" "$pubcode" "200"
 
 # Publishing touches site.toml, which reloads the routes and drops the cached
-# index. Give the watcher a moment; this is a real reload, not a sleep for luck.
-sleep 2
+# index. Wait for the effect rather than for a duration.
+wait_for "the published post reaches /blog" 30 \
+    "$(printf '%s' "${CURL[*]}") '$BASE/blog' | grep -qF '$STEM'"
 
 check "the published post is readable" "$(code "$BASE/blog/$STEM")" "200"
 check_contains "the published post serves its body" "$(body "$BASE/blog/$STEM")" "$MARKER"
@@ -448,7 +477,8 @@ check_contains "the published post is listed on /blog" "$(body "$BASE/blog")" "$
 unpubresp=$(authed -X POST "$BASE/api/unpublish/$STEM" -w '\n%{http_code}')
 unpubcode="${unpubresp##*$'\n'}"
 check "POST /api/unpublish/<stem>" "$unpubcode" "200"
-sleep 2
+wait_for "the unpublished post leaves /blog" 30 \
+    "! $(printf '%s' "${CURL[*]}") '$BASE/blog' | grep -qF '$STEM'"
 
 # The three checks that matter, and the three the old suite did not make.
 check_absent "an unpublished post is no longer listed on /blog" \
