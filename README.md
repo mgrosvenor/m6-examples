@@ -4,14 +4,41 @@ Eleven examples for the [m6](https://github.com/mgrosvenor/m6) web server framew
 
 ## Prerequisites
 
-```bash
-# Install m6 binaries
-cargo install --git https://github.com/mgrosvenor/m6 m6-http m6-html m6-file m6-auth-server m6-auth-cli
+**Clone m6 beside this repository, not inside it.** The custom renderer crates
+reach m6-core by relative path (`../../../../m6/m6-core`), so the two checkouts
+have to be siblings:
 
-# TLS for development (run once)
-mkcert -install && mkcert localhost 127.0.0.1
-# Outputs localhost.pem and localhost-key.pem in the current directory
-# Place or symlink them at the repo root so examples can find ../../localhost.pem
+```
+~/code/
+├── m6/
+└── m6-examples/
+```
+
+```bash
+# m6's binaries, from source. They are not on crates.io.
+git clone https://github.com/mgrosvenor/m6
+cd m6 && cargo build --release --workspace
+export PATH="$PWD/target/release:$PATH"
+
+# TLS for development, once. m6-http is HTTPS only.
+mkcert -install
+```
+
+Each example's `dev.sh` issues its own certificate into that example's `keys/` on
+first run, so there is nothing to place or symlink by hand.
+
+### Check the install
+
+Example 05 runs the whole stack, and its test suite makes 96 checks against it.
+Run that before anything else, and a failure is then a real answer about your
+install rather than a puzzle several examples later:
+
+```bash
+cargo build --release        # the custom renderers
+cd examples/05-cms
+./dev.sh                     # one terminal
+./test.sh                    # another
+#   96 passed  0 failed  (96 checks)
 ```
 
 ## Examples
@@ -45,6 +72,26 @@ cd examples/03-contact
 cargo build --release -p render-contact
 ./dev.sh
 ```
+
+`dev.sh` stops only the processes belonging to its own example, so another m6
+site on the same machine keeps running. It used to run `pkill -x m6-http`, which
+matches by name across the whole box and took down anything else you had up.
+
+## Running the tests
+
+Examples 05, 08, 10 and 11 have a `test.sh` that runs against a started stack.
+`./m6-test-eg` starts each example, runs its tests, and stops it again:
+
+```bash
+./m6-test-eg          # every example that can run locally
+./m6-test-eg 5 10     # just these
+```
+
+Example 05's is the one that covers the whole system, and m6's own build checks
+run it on every change to m6. If you are changing m6 itself,
+`M6_BUILD_HOST=... m6/tools/build-host-tests.sh` builds this repository against
+your m6 tree and runs that suite, which is what catches an m6 interface change
+breaking the code that uses it.
 
 ## Building custom renderers
 
