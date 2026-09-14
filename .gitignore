@@ -41,3 +41,9 @@ target
 
 # macOS
 .DS_Store
+
+# ...and keep the CMS drafts directory. git does not track empty directories, so
+# without this a fresh clone has no content/drafts/ and render-cms's dashboard
+# 500'd on it. The handler tolerates the absence now too; both, because a reader
+# should not depend on either alone.
+!examples/05-cms/content/drafts/.gitkeep

@@ -33,7 +33,16 @@ fn handle_contact_post(req: &Request) -> Result<Response> {
 
 fn handle_dashboard(req: &Request) -> Result<Response> {
     let author    = req["auth_username"].as_str().unwrap_or("");
-    let drafts    = req.list_json("content/drafts/")?;
+    // `unwrap_or_default`, not `?`. A FRESH CLONE HAS NO content/drafts/: git does
+    // not track empty directories, so the dashboard 500'd on a brand-new checkout
+    // until somebody happened to create a draft. `list_json` returns an error for a
+    // directory that does not exist, and the `?` turned that into a 500 on the one
+    // page a new reader opens first.
+    //
+    // No drafts and no drafts directory are the same thing to a reader, so they
+    // should render the same page. `cms_owned_stems` below already treats a missing
+    // directory as owning nothing; this call site was simply missed.
+    let drafts    = req.list_json("content/drafts/").unwrap_or_default();
     let index     = req.read_json("data/posts.json").unwrap_or_else(|_| json!({"documents": []}));
     let published = index["documents"].as_array().cloned().unwrap_or_default();
     Response::render_with("templates/cms/dashboard.html", req, json!({
