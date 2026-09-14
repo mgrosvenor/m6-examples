@@ -1,5 +1,5 @@
 use lettre::transport::smtp::authentication::Credentials;
-use m6_render::prelude::*;
+use m6_core::prelude::*;
 
 struct Global {
     mailer: SmtpTransport,
@@ -7,7 +7,12 @@ struct Global {
     to:     String,
 }
 
-fn init_global(config: &Map<String, Value>) -> Result<Global> {
+// Takes `&AppContext`, not `&Map<String, Value>`. m6-core's `App::with_global`
+// passes the whole context: the service config, the site directory and the
+// config path. `ctx.config` is the same map the old argument was, so the body
+// below is unchanged.
+fn init_global(ctx: &AppContext) -> Result<Global> {
+    let config = ctx.config;
     let host = config["smtp"]["host"].as_str()
         .ok_or_else(|| Error::Other(anyhow::anyhow!("smtp.host missing")))?;
     let port = config["smtp"]["port"].as_u64()

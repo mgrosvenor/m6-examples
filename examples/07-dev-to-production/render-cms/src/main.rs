@@ -1,4 +1,4 @@
-use m6_render::prelude::*;
+use m6_core::prelude::*;
 use serde_json::{json, Value};
 use std::fs;
 

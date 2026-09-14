@@ -1,6 +1,6 @@
 use render_admin::{bench, logs, ops, perf, system};
 use bench::JobStore;
-use m6_render::{App, Error, Request, Response};
+use m6_core::{App, AppContext, Error, Request, Response};
 use ops::ServiceConfig;
 use serde_json::{json, Value};
 use std::path::PathBuf;
@@ -30,7 +30,12 @@ pub struct Global {
     bench_jobs: JobStore,
 }
 
-fn init_global(cfg: &serde_json::Map<String, Value>) -> m6_render::Result<Global> {
+// Takes `&AppContext`, not `&Map<String, Value>`. m6-core's `App::with_global`
+// passes the whole context: the service config, the site directory and the
+// config path. `ctx.config` is the same map the old argument was, so the body
+// below is unchanged.
+fn init_global(ctx: &AppContext) -> m6_core::Result<Global> {
+    let cfg = ctx.config;
     let get = |key: &str, default: &str| -> String {
         cfg.get(key)
             .and_then(Value::as_str)
@@ -91,7 +96,7 @@ fn init_global(cfg: &serde_json::Map<String, Value>) -> m6_render::Result<Global
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
-fn handle_perf(req: &Request, g: &Global) -> m6_render::Result<Response> {
+fn handle_perf(req: &Request, g: &Global) -> m6_core::Result<Response> {
     let n = req.dict()
         .get("n")
         .and_then(Value::as_str)
@@ -100,7 +105,7 @@ fn handle_perf(req: &Request, g: &Global) -> m6_render::Result<Response> {
     Ok(Response::json(perf::perf_blob(&g.log_file, n)))
 }
 
-fn handle_routes(_req: &Request, g: &Global) -> m6_render::Result<Response> {
+fn handle_routes(_req: &Request, g: &Global) -> m6_core::Result<Response> {
     let n = _req.dict()
         .get("n")
         .and_then(Value::as_str)
@@ -109,15 +114,15 @@ fn handle_routes(_req: &Request, g: &Global) -> m6_render::Result<Response> {
     Ok(Response::json(perf::routes_blob(&g.log_file, n)))
 }
 
-fn handle_system(_req: &Request, _g: &Global) -> m6_render::Result<Response> {
+fn handle_system(_req: &Request, _g: &Global) -> m6_core::Result<Response> {
     Ok(Response::json(system::system_blob()))
 }
 
-fn handle_bench_targets(_req: &Request, g: &Global) -> m6_render::Result<Response> {
+fn handle_bench_targets(_req: &Request, g: &Global) -> m6_core::Result<Response> {
     Ok(Response::json(bench::targets_blob(&g.site_toml)))
 }
 
-fn handle_bench_start(req: &Request, g: &Global) -> m6_render::Result<Response> {
+fn handle_bench_start(req: &Request, g: &Global) -> m6_core::Result<Response> {
     let body: Value = req.body_json()
         .map_err(|_| Error::BadRequest("invalid JSON body".into()))?;
 
@@ -143,7 +148,7 @@ fn handle_bench_start(req: &Request, g: &Global) -> m6_render::Result<Response> 
     Ok(Response::json(result))
 }
 
-fn handle_bench_poll(req: &Request, g: &Global) -> m6_render::Result<Response> {
+fn handle_bench_poll(req: &Request, g: &Global) -> m6_core::Result<Response> {
     let id = req["id"].as_str().unwrap_or("");
     match bench::poll_job(&g.bench_jobs, id) {
         Some(blob) => Ok(Response::json(blob)),
@@ -151,7 +156,7 @@ fn handle_bench_poll(req: &Request, g: &Global) -> m6_render::Result<Response> {
     }
 }
 
-fn handle_logs(req: &Request, g: &Global) -> m6_render::Result<Response> {
+fn handle_logs(req: &Request, g: &Global) -> m6_core::Result<Response> {
     let n = req.dict().get("n").and_then(Value::as_str)
         .and_then(|s| s.parse::<usize>().ok()).unwrap_or(g.log_tail_default);
     let offset = req.dict().get("offset").and_then(Value::as_str)
@@ -159,11 +164,11 @@ fn handle_logs(req: &Request, g: &Global) -> m6_render::Result<Response> {
     Ok(Response::json(logs::logs_blob(&g.log_file, n, offset)))
 }
 
-fn handle_config_read(_req: &Request, g: &Global) -> m6_render::Result<Response> {
+fn handle_config_read(_req: &Request, g: &Global) -> m6_core::Result<Response> {
     Ok(Response::json(ops::config_read(&g.site_toml)))
 }
 
-fn handle_config_write(req: &Request, g: &Global) -> m6_render::Result<Response> {
+fn handle_config_write(req: &Request, g: &Global) -> m6_core::Result<Response> {
     let body: Value = req.body_json()
         .map_err(|_| Error::BadRequest("invalid JSON body".into()))?;
 
@@ -173,47 +178,47 @@ fn handle_config_write(req: &Request, g: &Global) -> m6_render::Result<Response>
     }
 
     ops::config_write(&g.site_toml, &body)
-        .map_err(|e| Error::BadRequest(e))?;
+        .map_err(Error::BadRequest)?;
 
     Ok(Response::json(json!({ "ok": true })))
 }
 
-fn handle_config_touch(_req: &Request, g: &Global) -> m6_render::Result<Response> {
+fn handle_config_touch(_req: &Request, g: &Global) -> m6_core::Result<Response> {
     ops::config_touch(&g.site_toml)
-        .map_err(|e| Error::BadRequest(e))?;
+        .map_err(Error::BadRequest)?;
     Ok(Response::json(json!({ "ok": true })))
 }
 
-fn handle_restart(req: &Request, g: &Global) -> m6_render::Result<Response> {
+fn handle_restart(req: &Request, g: &Global) -> m6_core::Result<Response> {
     let name = req["name"].as_str().unwrap_or("");
     let svc = g.services.iter().find(|s| s.name == name)
         .ok_or(Error::NotFound)?;
     Ok(Response::json(ops::restart_service(svc)))
 }
 
-fn handle_backends_summary(_req: &Request, g: &Global) -> m6_render::Result<Response> {
+fn handle_backends_summary(_req: &Request, g: &Global) -> m6_core::Result<Response> {
     Ok(Response::json(perf::backends_summary_blob(&g.log_file, &g.site_toml, g.routes_sample)))
 }
 
-fn handle_backend_sample(req: &Request, g: &Global) -> m6_render::Result<Response> {
+fn handle_backend_sample(req: &Request, g: &Global) -> m6_core::Result<Response> {
     let name = req["name"].as_str().unwrap_or("");
     let n = req.dict().get("n").and_then(Value::as_str)
         .and_then(|s| s.parse::<usize>().ok()).unwrap_or(g.routes_sample);
     Ok(Response::json(perf::backend_stats_blob(&g.log_file, &g.site_toml, name, n)))
 }
 
-fn handle_backend_alltime(req: &Request, g: &Global) -> m6_render::Result<Response> {
+fn handle_backend_alltime(req: &Request, g: &Global) -> m6_core::Result<Response> {
     let name = req["name"].as_str().unwrap_or("");
     Ok(Response::json(perf::backend_stats_blob(&g.log_file, &g.site_toml, name, usize::MAX)))
 }
 
-fn handle_m6http_sample(req: &Request, g: &Global) -> m6_render::Result<Response> {
+fn handle_m6http_sample(req: &Request, g: &Global) -> m6_core::Result<Response> {
     let n = req.dict().get("n").and_then(Value::as_str)
         .and_then(|s| s.parse::<usize>().ok()).unwrap_or(g.routes_sample);
     Ok(Response::json(perf::m6http_stats_blob(&g.log_file, n)))
 }
 
-fn handle_m6http_alltime(_req: &Request, g: &Global) -> m6_render::Result<Response> {
+fn handle_m6http_alltime(_req: &Request, g: &Global) -> m6_core::Result<Response> {
     Ok(Response::json(perf::m6http_stats_blob(&g.log_file, usize::MAX)))
 }
 

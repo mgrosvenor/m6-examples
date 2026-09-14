@@ -226,7 +226,7 @@ fn build_stats_blob(name: &str, entries: &[Value]) -> Value {
     }
     let mut routes: Vec<Value> = by_path.into_iter().map(|(path, rs)| {
         let hit_rate = if rs.requests > 0 { rs.cache_hits as f64 / rs.requests as f64 } else { 0.0 };
-        let avg_lat  = if rs.requests > 0 { rs.latency_sum / rs.requests } else { 0 };
+        let avg_lat  = rs.latency_sum.checked_div(rs.requests).unwrap_or(0);
         json!({
             "path":           path,
             "requests":       rs.requests,
@@ -304,7 +304,7 @@ fn compute_stats(entries: &[&Value]) -> AggStats {
     let cache_misses = requests.saturating_sub(cache_hits);
     let hit_rate  = if requests > 0 { cache_hits  as f64 / requests as f64 } else { 0.0 };
     let miss_rate = if requests > 0 { cache_misses as f64 / requests as f64 } else { 0.0 };
-    let avg_latency_ns = if requests > 0 { latency_sum / requests } else { 0 };
+    let avg_latency_ns = latency_sum.checked_div(requests).unwrap_or(0);
 
     hit_lats.sort_unstable();
     miss_lats.sort_unstable();
@@ -391,7 +391,7 @@ fn aggregate_routes(entries: &[Value]) -> Value {
     let mut routes: Vec<Value> = by_path.into_iter().map(|(path, s)| {
         let misses   = s.requests - s.cache_hits;
         let hit_rate = if s.requests > 0 { s.cache_hits as f64 / s.requests as f64 } else { 0.0 };
-        let avg_lat  = if s.requests > 0 { s.latency_sum / s.requests } else { 0 };
+        let avg_lat  = s.latency_sum.checked_div(s.requests).unwrap_or(0);
         json!({
             "path":           path,
             "requests":       s.requests,
