@@ -10,7 +10,7 @@ chmod 600 "$SITE/keys/auth.pem"
 echo "Keys generated."
 
 # Create first admin/editor user
-m6-auth-cli "$SITE/configs/m6-auth.conf" user add admin --role admin
+m6-auth-cli "$SITE/configs/m6-auth.conf" user add admin --role admin --password admin
 m6-auth-cli "$SITE/configs/m6-auth.conf" group add editors
 m6-auth-cli "$SITE/configs/m6-auth.conf" group member add editors admin
 

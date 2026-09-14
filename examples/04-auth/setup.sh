@@ -10,6 +10,6 @@ chmod 600 "$SITE/keys/auth.pem"
 echo "Keys generated."
 
 # Create first admin user — database created automatically if absent
-m6-auth-cli "$SITE/configs/m6-auth.conf" user add admin --role admin
+m6-auth-cli "$SITE/configs/m6-auth.conf" user add admin --role admin --password admin
 
 echo "Setup complete. Start the server with ./dev.sh"

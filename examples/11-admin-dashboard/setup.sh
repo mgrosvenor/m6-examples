@@ -29,7 +29,7 @@ mkdir -p /tmp/m6
 # ── User database ─────────────────────────────────────────────────────────────
 if [ ! -f "$SITE/data/auth.db" ]; then
     echo "Creating admin user..."
-    m6-auth-cli "$SITE/configs/m6-auth.conf" user add admin --role admin --password changeme
+    m6-auth-cli "$SITE/configs/m6-auth.conf" user add admin --role admin --password admin
 fi
 
 echo ""

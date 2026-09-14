@@ -215,6 +215,10 @@ start_eg() {
 
     echo "starting example $num ($(basename "$dir"))..."
 
+    # Export browser flag so dev.sh scripts that call `open` directly can respect it.
+    export M6_NO_BROWSER
+    [ "$OPEN_BROWSER" = "0" ] && M6_NO_BROWSER=1 || M6_NO_BROWSER=0
+
     # Launch dev.sh directly. Its EXIT trap kills all child jobs when we SIGTERM it.
     bash "$dev_sh" &>/tmp/m6-eg-${num}.log &
     local pg=$!
@@ -236,10 +240,18 @@ start_eg() {
     fi
 }
 
-# Detect the port from an example's site.toml (defaults to 8443).
+# Detect the port from an example's dev.sh comment or site.toml (defaults to 8443).
+# dev.sh files that use non-standard ports should declare: # M6_PORT=<port>
 example_port() {
     local dir
     dir=$(find_eg_dir "$1" 2>/dev/null) || { echo "8443"; return; }
+    # Check for explicit port declaration in dev.sh.
+    local dev_port
+    dev_port=$(grep -m1 '^# M6_PORT=' "$dir/dev.sh" 2>/dev/null | cut -d= -f2)
+    if [ -n "$dev_port" ]; then
+        echo "$dev_port"
+        return
+    fi
     local port
     port=$(grep -m1 'bind' "$dir/site.toml" 2>/dev/null \
            | grep -o ':[0-9]*"' | tr -d ':"')
@@ -253,6 +265,7 @@ example_url_path() {
         5)  echo "/cms" ;;
         7)  echo "/cms" ;;
         8)  echo "/logs" ;;
+        9)  echo "/blog" ;;
         *)  echo "/" ;;
     esac
 }

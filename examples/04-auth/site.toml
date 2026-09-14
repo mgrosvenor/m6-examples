@@ -12,7 +12,8 @@ backend    = "m6-auth"
 public_key = "keys/auth.pub"
 
 [errors]
-mode = "internal"
+mode             = "internal"
+verbose_fallback = true
 
 [log]
 level  = "info"

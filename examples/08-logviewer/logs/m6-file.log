@@ -1,3 +1,0 @@
-{"timestamp":"2026-03-19T12:41:02.665513Z","level":"INFO","fields":{"message":"m6-file starting","route_count":2,"site_dir":"/Users/mgrosvenor/m6-examples/examples/08-logviewer"},"target":"m6_file"}
-{"timestamp":"2026-03-19T12:41:02.665935Z","level":"INFO","fields":{"message":"listening on Unix socket","socket":"/tmp/m6/m6-file.sock"},"target":"m6_file"}
-{"timestamp":"2026-03-19T12:41:02.666200Z","level":"INFO","fields":{"message":"thread pool configured","threads":10},"target":"m6_file"}

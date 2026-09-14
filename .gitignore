@@ -31,5 +31,13 @@ target
 **/*.db-shm
 **/*.db-wal
 
+# Service logs written by dev.sh. Every example run rewrites these, so tracking
+# them meant `git status` was never clean and the build-host guard could not tell
+# real uncommitted work from a stack having been started once.
+**/logs/
+# ...but keep the directory itself. Example 08 is the log viewer: m6-file serves
+# a route rooted at logs/, so on a fresh clone the directory has to exist.
+!**/logs/.gitkeep
+
 # macOS
 .DS_Store

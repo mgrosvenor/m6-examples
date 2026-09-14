@@ -1,4 +1,0 @@
-{"timestamp":"2026-03-19T12:41:02.924993Z","level":"INFO","fields":{"message":"m6-render started","routes":3,"threads":10,"socket":"/tmp/m6/m6-html.sock"},"target":"m6_render::app"}
-{"timestamp":"2026-03-19T12:41:03.738468Z","level":"DEBUG","fields":{"message":"request complete","path":"/","method":"GET","status":200,"latency_us":"1356"},"target":"m6_render::app"}
-{"timestamp":"2026-03-19T12:41:12.705686Z","level":"INFO","fields":{"message":"Shutdown signal received, draining..."},"target":"m6_render::app"}
-{"timestamp":"2026-03-19T12:41:12.705709Z","level":"INFO","fields":{"message":"Clean shutdown"},"target":"m6_render::app"}

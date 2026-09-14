@@ -1,10 +1,14 @@
 {% extends "templates/base.html" %}
 {% block title %}
-  {%- set post = documents | filter(attribute="stem", value=stem) | first -%}
+  {%- set post_list = documents | filter(attribute="stem", value=stem) -%}
+  {%- if post_list | length == 0 %}{{ not_found() }}{% endif -%}
+  {%- set post = post_list | first -%}
   {{ post.title }} · {{ site_name }}
 {% endblock %}
 {% block content %}
-  {% set post = documents | filter(attribute="stem", value=stem) | first %}
+  {% set post_list = documents | filter(attribute="stem", value=stem) %}
+  {% if post_list | length == 0 %}{{ not_found() }}{% endif %}
+  {% set post = post_list | first %}
   {% if post.cover %}
   <img class="post-hero" src="{{ post.cover }}" alt="">
   {% endif %}
