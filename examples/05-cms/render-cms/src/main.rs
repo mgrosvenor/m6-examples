@@ -157,20 +157,66 @@ fn handle_unpublish(req: &Request) -> Result<Response> {
     Ok(Response::json(json!({"unpublished": true})))
 }
 
-fn update_index(req: &Request) -> Result<()> {
-    // CMS-managed posts (.json files written by the publish handler).
-    let cms_posts = req.list_json("content/posts/")?;
-    let cms_stems: std::collections::HashSet<&str> = cms_posts.iter()
-        .filter_map(|p| p["stem"].as_str())
-        .collect();
+/// Every stem this CMS owns, published or not, taken from the file names in both
+/// content directories rather than from the files' contents.
+///
+/// `content/posts/{stem}.json` and `content/drafts/{stem}.json` are named by
+/// stem by construction, so the name is the reliable fact. Reading `["stem"]`
+/// out of the JSON would also work for published posts but not for a draft that
+/// has never been published, and a missing field would silently drop the entry
+/// from this set, which is the failure this function exists to prevent.
+fn cms_owned_stems(req: &Request) -> std::collections::HashSet<String> {
+    let mut stems = std::collections::HashSet::new();
+    for dir in ["content/posts/", "content/drafts/"] {
+        let path = req.site_path(dir);
+        let Ok(entries) = fs::read_dir(&path) else {
+            continue; // a directory that does not exist owns nothing
+        };
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.extension().and_then(|e| e.to_str()) == Some("json") {
+                if let Some(stem) = p.file_stem().and_then(|s| s.to_str()) {
+                    stems.insert(stem.to_string());
+                }
+            }
+        }
+    }
+    stems
+}
 
-    // Preserve existing index entries that are NOT managed by the CMS
-    // (i.e. .md-sourced posts indexed by m6-md).
+/// Rebuild `data/posts.json` from the CMS's published posts plus whatever
+/// m6-md put there from markdown.
+///
+/// ## Why ownership is not inferred from the surviving files
+///
+/// This used to work out which stems belonged to the CMS by reading
+/// `content/posts/`, the published directory, and preserving every index entry
+/// whose stem was not in it. **That made unpublishing do nothing at all.**
+///
+/// `handle_unpublish` deletes `content/posts/{stem}.json` and then calls this.
+/// By that point the stem is no longer in the published directory, so the old
+/// code classified it as markdown-sourced and carefully preserved the entry it
+/// was supposed to be removing. The API answered `{"unpublished": true}`, the
+/// post stayed in the index, stayed listed on `/blog`, and stayed readable at
+/// its own URL. Nothing reported a problem, and the example's own test suite
+/// passed it, because the test only checked that the response said "unpublished"
+/// and never asked whether the post had gone.
+///
+/// A post's owner cannot be deduced from where it currently is, so ownership
+/// comes from `cms_owned_stems`, which counts drafts as CMS-owned too. An
+/// unpublished post has a draft file, so it is owned, so the stale index entry
+/// is dropped and not re-added.
+fn update_index(req: &Request) -> Result<()> {
+    let cms_posts = req.list_json("content/posts/")?;
+    let owned = cms_owned_stems(req);
+
+    // Preserve existing index entries this CMS does not own: the .md-sourced
+    // posts m6-md indexes.
     let existing = req.read_json("data/posts.json")
         .unwrap_or_else(|_| json!({"documents": []}));
     let md_posts: Vec<Value> = existing["documents"].as_array()
         .map(|docs| docs.iter()
-            .filter(|d| !cms_stems.contains(d["stem"].as_str().unwrap_or("")))
+            .filter(|d| !owned.contains(d["stem"].as_str().unwrap_or("")))
             .cloned()
             .collect())
         .unwrap_or_default();

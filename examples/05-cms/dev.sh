@@ -11,6 +11,8 @@ for arg in "$@"; do
 done
 # Suppress browser launch when running non-interactively (CI, cargo test, etc.)
 [[ -t 1 ]] || NO_OPEN=1
+# Respect M6_NO_BROWSER exported by m6-run-eg.
+[[ "${M6_NO_BROWSER:-0}" = "1" ]] && NO_OPEN=1
 
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RESET='\033[0m'
 info() { echo -e "${YELLOW}----${RESET} $1"; }
@@ -64,11 +66,27 @@ mkdir -p "$SITE/logs"
 mkdir -p /tmp/m6
 
 lsof -ti :8443 2>/dev/null | xargs kill -9 2>/dev/null || true
-pkill -x m6-http 2>/dev/null || true
-pkill -x m6-html 2>/dev/null || true
-pkill -x m6-file 2>/dev/null || true
-pkill -x m6-auth-server 2>/dev/null || true
-pkill -x render-cms 2>/dev/null || true
+# Kill only THIS example's own processes.
+#
+# This used to be `pkill -x m6-http; pkill -x m6-html; ...`, which matches by
+# process name across the whole machine. Anyone with another m6 site running --
+# their own site, a preview instance, a multi-node local fleet -- lost all of it
+# the moment they started this example, with no warning and nothing in the log
+# saying what had happened. It killed a running seven-node local fleet exactly
+# that way.
+#
+# `pgrep -f "$SITE"` matches the site directory in the command line instead, so
+# it can only ever reach processes started for this example. The port holder on
+# the bind address is killed separately above, because a stale process from an
+# earlier run of THIS example is the case the cleanup is actually for.
+kill_own() {
+    local pid
+    for pid in $(pgrep -f "$SITE" 2>/dev/null || true); do
+        [ "$pid" = "$$" ] && continue
+        kill "$pid" 2>/dev/null || true
+    done
+}
+kill_own
 sleep 0.3
 
 rm -f /tmp/m6/m6-html*.sock /tmp/m6/m6-file*.sock /tmp/m6/m6-auth*.sock /tmp/m6/render-cms*.sock

@@ -2,12 +2,24 @@
 name   = "My Site"
 domain = "localhost"
 
+[server]
+# m6-http validates the request method before routing, cache lookup or backend
+# dispatch, and the default is GET, HEAD, POST only: anything else is answered
+# 405 with an `Allow` header and never reaches a backend.
+#
+# This example's renderer registers a PATCH route, so they have to be
+# declared here too. Without this line every PATCH request was answered
+# 405 by the edge while the handler behind it was registered and working, which
+# looks exactly like a missing route and is not one.
+allowed_methods = ["GET", "HEAD", "POST", "PATCH"]
+
 [auth]
 backend    = "m6-auth"
 public_key = "keys/auth.pub"
 
 [errors]
-mode = "internal"
+mode             = "internal"
+verbose_fallback = true
 
 [log]
 level  = "info"

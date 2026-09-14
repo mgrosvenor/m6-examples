@@ -1,15 +1,45 @@
 #!/usr/bin/env bash
-# test.sh — comprehensive end-to-end test suite for the example-05 CMS blog site.
+# test.sh — end-to-end test for example 05, the CMS blog.
 #
-# Requires the server stack to already be running (start with ./dev.sh).
-# Tests every public page, every protected page (with real auth), every API
-# endpoint, and the full CMS draft → publish → unpublish lifecycle.
+# This is the example that runs the whole stack: m6-http at the edge, m6-html for
+# templates, m6-file for assets, m6-md for markdown, m6-auth-server for logins,
+# and render-cms as a custom renderer. So this is the suite that checks the
+# system rather than one service, and it is the one to run before believing that
+# a change to m6 did no harm.
+#
+# Start the stack first:  ./dev.sh
 #
 # Usage:
-#   ./test.sh                      # test against default https://127.0.0.1:8443
-#   ./test.sh --addr HOST:PORT     # test against a different address
-#   ./test.sh --user U --pass P    # use different credentials (default: admin/admin)
-set -euo pipefail
+#   ./test.sh                      against https://127.0.0.1:8443
+#   ./test.sh --addr HOST:PORT     against a different address
+#   ./test.sh --user U --pass P    different credentials (default admin/admin)
+#
+# ── There are no skips ───────────────────────────────────────────────────────
+#
+# Every check has exactly one expected answer. The previous version of this file
+# had five that accepted a range -- "302 or 401 or 403", "may require a valid
+# token", "session may persist on server" -- and each one was hiding something:
+#
+#   - a check that passed on either answer reported the post-logout state as
+#     fine while never establishing what it was
+#   - `GET /auth/refresh` was reported as a possible token problem. The endpoint
+#     is POST-only, so the GET was a 404 and always would be
+#   - the token check used `grep -oP`, a GNU extension. On macOS that is
+#     "invalid option -- P", so it printed "token not found, may use httpOnly"
+#     on every run of a working server
+#
+# A check that cannot fail is not a check. If something here cannot be
+# established, it fails and says so.
+#
+# ── What is deliberately not covered ─────────────────────────────────────────
+#
+#   - HTTP/3, because the system curl has no h3. m6's own conformance suite
+#     covers h3 against h3spec.
+#   - Real SMTP. The contact form's POST path is exercised; delivery is not.
+#   - TLS certificate validation: -k throughout, because these are mkcert certs.
+set -uo pipefail
+
+SITE="$(cd "$(dirname "$0")" && pwd)"
 
 ADDR="127.0.0.1:8443"
 CMS_USER="admin"
@@ -25,332 +55,522 @@ while [[ $# -gt 0 ]]; do
 done
 
 BASE="https://${ADDR}"
-CURL=(curl -sk --http1.1)   # -s = silent, -k = skip TLS verify
+CURL=(curl -sk --http1.1)
 
-PASS=0; FAIL=0; SKIP=0
-AUTH_COOKIE=""          # populated after login
-DRAFT_STEM=""           # populated after draft creation
+# Kept out of the site tree so a stray file cannot be served as content.
+WORK="$(mktemp -d)"
+JAR="$WORK/cookies.txt"
+trap 'rm -rf "$WORK"' EXIT
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RESET='\033[0m'
+PASS=0; FAIL=0
+RED=$'\033[0;31m'; GREEN=$'\033[0;32m'; YELLOW=$'\033[1;33m'; RESET=$'\033[0m'
 
-# ── Helpers ────────────────────────────────────────────────────────────────────
+# ── Helpers ──────────────────────────────────────────────────────────────────
 
+pass() { echo "  ${GREEN}PASS${RESET}  $1"; PASS=$(( PASS + 1 )); }
+fail() { echo "  ${RED}FAIL${RESET}  $1"; FAIL=$(( FAIL + 1 )); }
+
+# check <label> <got> <want>
 check() {
-    local label="$1"
-    local got="$2"
-    local want="$3"
-    if [[ "$got" == "$want" ]]; then
-        echo -e "  ${GREEN}PASS${RESET}  $label (${got})"
-        PASS=$(( PASS + 1 ))
-    else
-        echo -e "  ${RED}FAIL${RESET}  $label — expected ${want}, got ${got}"
-        FAIL=$(( FAIL + 1 ))
-    fi
+    if [[ "$2" == "$3" ]]; then pass "$1 ($2)"; else fail "$1 — expected $3, got $2"; fi
 }
 
+# check_contains <label> <haystack> <needle>
 check_contains() {
-    local label="$1"
-    local body="$2"
-    local needle="$3"
-    if echo "$body" | grep -qF "$needle"; then
-        echo -e "  ${GREEN}PASS${RESET}  $label (contains '${needle}')"
-        PASS=$(( PASS + 1 ))
+    if printf '%s' "$2" | grep -qF -- "$3"; then
+        pass "$1"
     else
-        echo -e "  ${RED}FAIL${RESET}  $label — body does not contain '${needle}'"
-        FAIL=$(( FAIL + 1 ))
+        fail "$1 — no '$3' in the response"
     fi
 }
 
-http_code() {
-    "${CURL[@]}" -o /dev/null -w "%{http_code}" "$@"
+# check_absent <label> <haystack> <needle>
+check_absent() {
+    if printf '%s' "$2" | grep -qF -- "$3"; then
+        fail "$1 — '$3' is present and should not be"
+    else
+        pass "$1"
+    fi
 }
 
-http_body() {
-    "${CURL[@]}" "$@"
+# check_file_contains <label> <path> <needle>
+#
+# Separate from check_contains because that one holds the haystack in a shell
+# variable and pipes it to grep. For a file the size of data/posts.json that
+# wastes the copy and, worse, grep exits on the first match while printf is still
+# writing, so printf reports a broken pipe and the check reads as a failure on a
+# passing system.
+check_file_contains() {
+    if grep -qF -- "$3" "$2" 2>/dev/null; then
+        pass "$1"
+    else
+        fail "$1 — no '$3' in $2"
+    fi
 }
 
-http_code_body() {
-    # Writes status to stdout, body to second arg (variable name via nameref)
-    local -n _body_ref=$2
-    local _url="$1"; shift 2
-    local _tmp
-    _tmp=$("${CURL[@]}" -w '\n%{http_code}' "$_url" "$@")
-    local _code="${_tmp##*$'\n'}"
-    _body_ref="${_tmp%$'\n'${_code}}"
-    echo "$_code"
+# check_file_absent <label> <path> <needle>
+check_file_absent() {
+    if grep -qF -- "$3" "$2" 2>/dev/null; then
+        fail "$1 — '$3' is present in $2 and should not be"
+    else
+        pass "$1"
+    fi
 }
 
-section() { echo ""; echo -e "${YELLOW}── $1 ──────────────────────────────────────────────${RESET}"; }
+# check_nonempty <label> <value>
+check_nonempty() {
+    if [[ -n "$2" ]]; then pass "$1 ($2)"; else fail "$1 — absent"; fi
+}
 
-# ── 0. Server reachability ────────────────────────────────────────────────────
+code()  { "${CURL[@]}" -o /dev/null -w '%{http_code}' "$@"; }
+body()  { "${CURL[@]}" "$@"; }
+# Response headers with the header NAME lowercased and CRs stripped, because
+# names are case-insensitive (RFC 9110 5.1) and h1 and h2 do not agree on the
+# case they send. Values are left exactly as they arrived: lowercasing those too
+# turned `Allow: GET, HEAD, POST` into lowercase and quietly broke every
+# assertion made against a header's value.
+heads() {
+    "${CURL[@]}" -D - -o /dev/null "$@" | tr -d '\r' | awk '
+        { i = index($0, ":")
+          if (i > 0) print tolower(substr($0, 1, i - 1)) substr($0, i)
+          else       print }'
+}
+# header_value <name> <headers>
+header_value() { printf '%s\n' "$2" | grep "^$1:" | head -1 | sed "s/^$1:[[:space:]]*//"; }
 
-section "0. Server reachability"
-code=$(http_code "$BASE/")
-check "GET / reachable" "$code" "200"
+authed()      { "${CURL[@]}" -b "$JAR" "$@"; }
+authed_code() { "${CURL[@]}" -b "$JAR" -o /dev/null -w '%{http_code}' "$@"; }
 
-# ── 1. Public pages ───────────────────────────────────────────────────────────
+section() { echo; echo "${YELLOW}── $1 ${RESET}"; }
 
-section "1. Public pages"
+json_field() {  # json_field <field> <<< json   (on stdin)
+    python3 -c "import sys,json
+try: print(json.load(sys.stdin).get('$1',''))
+except Exception: print('')"
+}
 
-code=$(http_code "$BASE/")
-check "GET / → 200" "$code" "200"
+# ── 0. The stack is up ───────────────────────────────────────────────────────
 
-body=$(http_body "$BASE/")
-check_contains "GET / → contains site name" "$body" "m6"
-check_contains "GET / → contains Recent Posts" "$body" "Recent Posts"
+section "0. The stack is up"
 
-code=$(http_code "$BASE/about")
-check "GET /about → 200" "$code" "200"
-
-code=$(http_code "$BASE/blog")
-check "GET /blog → 200" "$code" "200"
-body=$(http_body "$BASE/blog")
-check_contains "GET /blog → lists posts" "$body" "quick-start"
-
-code=$(http_code "$BASE/blog/quick-start")
-check "GET /blog/quick-start → 200" "$code" "200"
-body=$(http_body "$BASE/blog/quick-start")
-check_contains "GET /blog/quick-start → title present" "$body" "Quick Start"
-
-code=$(http_code "$BASE/blog/architecture")
-check "GET /blog/architecture → 200" "$code" "200"
-
-code=$(http_code "$BASE/blog/nonexistent-post-xyz")
-check "GET /blog/nonexistent → 200 (not-found page)" "$code" "200"
-body=$(http_body "$BASE/blog/nonexistent-post-xyz")
-check_contains "GET /blog/nonexistent → shows not-found message" "$body" "not found"
-
-# ── 2. Static assets ──────────────────────────────────────────────────────────
-
-section "2. Static assets"
-
-code=$(http_code "$BASE/assets/style.css")
-check "GET /assets/style.css → 200" "$code" "200"
-
-content_type=$(${CURL[@]} -o /dev/null -w "%{content_type}" "$BASE/assets/style.css")
-check_contains "style.css content-type is CSS" "$content_type" "text/css"
-
-code=$(http_code "$BASE/assets/easymde.min.js")
-check "GET /assets/easymde.min.js → 200" "$code" "200"
-
-code=$(http_code "$BASE/assets/nonexistent.css")
-check "GET /assets/nonexistent.css → 404" "$code" "404"
-
-# ── 3. Contact form ───────────────────────────────────────────────────────────
-
-section "3. Contact form"
-
-code=$(http_code "$BASE/contact")
-check "GET /contact → 200" "$code" "200"
-
-body=$(http_body "$BASE/contact")
-check_contains "GET /contact → contains form" "$body" "<form"
-check_contains "GET /contact → has name field" "$body" "name"
-
-# POST the contact form
-code=$(http_code "$BASE/contact" -X POST \
-    -H "Content-Type: application/x-www-form-urlencoded" \
-    -d "name=Alice&email=alice%40example.com&message=Hello+from+test")
-check "POST /contact → 200" "$code" "200"
-
-body=$(http_body "$BASE/contact" -X POST \
-    -H "Content-Type: application/x-www-form-urlencoded" \
-    -d "name=TestUser&email=test%40example.com&message=Test+message")
-check_contains "POST /contact → success confirmation" "$body" "TestUser"
-
-# ── 4. Login page ─────────────────────────────────────────────────────────────
-
-section "4. Login page"
-
-code=$(http_code "$BASE/login")
-check "GET /login → 200" "$code" "200"
-body=$(http_body "$BASE/login")
-check_contains "GET /login → has login form" "$body" "<form"
-check_contains "GET /login → has password field" "$body" "password"
-
-# ── 5. Auth endpoints ─────────────────────────────────────────────────────────
-
-section "5. Auth endpoints"
-
-# POST /auth/login — get auth cookie
-login_resp=$("${CURL[@]}" -c /tmp/m6-test-cookies.txt \
-    -w '\n%{http_code}' \
-    -X POST "$BASE/auth/login" \
-    -H "Content-Type: application/x-www-form-urlencoded" \
-    -d "username=${CMS_USER}&password=${CMS_PASS}")
-login_code="${login_resp##*$'\n'}"
-check "POST /auth/login → 302 redirect" "$login_code" "302"
-
-# Follow redirect to get session cookie
-AUTH_COOKIE=$("${CURL[@]}" -b /tmp/m6-test-cookies.txt \
-    -c /tmp/m6-test-cookies.txt \
-    -o /dev/null -w "%{http_code}" \
-    -X POST "$BASE/auth/login" \
-    -H "Content-Type: application/x-www-form-urlencoded" \
-    -d "username=${CMS_USER}&password=${CMS_PASS}" \
-    -L)
-
-# Get token from cookie jar
-TOKEN=$(grep -oP 'auth_token\s+\K\S+' /tmp/m6-test-cookies.txt 2>/dev/null || true)
-if [[ -n "$TOKEN" ]]; then
-    echo -e "  ${GREEN}PASS${RESET}  auth token obtained"
-    PASS=$(( PASS + 1 ))
-else
-    echo -e "  ${YELLOW}SKIP${RESET}  auth token not found in cookie jar (may use httpOnly)"
-    SKIP=$(( SKIP + 1 ))
-fi
-
-# Use the cookie jar for authenticated requests
-AUTHED_CURL=("${CURL[@]}" -b /tmp/m6-test-cookies.txt)
-
-# ── 6. Protected CMS pages ────────────────────────────────────────────────────
-
-section "6. Protected CMS pages"
-
-# Without auth, CMS pages should redirect to login (302/401)
-code=$(http_code "$BASE/cms")
-if [[ "$code" == "302" || "$code" == "401" || "$code" == "403" ]]; then
-    echo -e "  ${GREEN}PASS${RESET}  GET /cms without auth → ${code} (access denied)"
-    PASS=$(( PASS + 1 ))
-else
-    echo -e "  ${RED}FAIL${RESET}  GET /cms without auth → ${code} (expected 302/401/403)"
-    FAIL=$(( FAIL + 1 ))
-fi
-
-# With auth cookie
-code=$("${AUTHED_CURL[@]}" -o /dev/null -w "%{http_code}" "$BASE/cms")
-check "GET /cms with auth → 200" "$code" "200"
-body=$("${AUTHED_CURL[@]}" "$BASE/cms")
-check_contains "GET /cms → shows dashboard" "$body" "draft"
-
-code=$("${AUTHED_CURL[@]}" -o /dev/null -w "%{http_code}" "$BASE/cms/new")
-check "GET /cms/new with auth → 200" "$code" "200"
-body=$("${AUTHED_CURL[@]}" "$BASE/cms/new")
-check_contains "GET /cms/new → has editor" "$body" "title"
-
-# ── 7. CMS API: draft lifecycle ───────────────────────────────────────────────
-
-section "7. CMS API: draft → publish → unpublish lifecycle"
-
-# Create a draft
-DRAFT_TITLE="Test Post $(date +%s)"
-create_resp=$("${AUTHED_CURL[@]}" \
-    -X POST "$BASE/api/drafts" \
-    -H "Content-Type: application/json" \
-    -d "{\"title\":\"${DRAFT_TITLE}\",\"body\":\"Hello world\",\"summary\":\"A test post\",\"tags\":[\"test\"],\"date\":\"2026-03-21\"}" \
-    -w '\n%{http_code}')
-create_code="${create_resp##*$'\n'}"
-create_body="${create_resp%$'\n'${create_code}}"
-check "POST /api/drafts → 201 created" "$create_code" "201"
-
-DRAFT_STEM=$(echo "$create_body" | python3 -c "import sys,json; print(json.load(sys.stdin).get('stem',''))" 2>/dev/null || true)
-if [[ -n "$DRAFT_STEM" ]]; then
-    echo -e "  ${GREEN}PASS${RESET}  draft stem obtained: ${DRAFT_STEM}"
-    PASS=$(( PASS + 1 ))
-else
-    echo -e "  ${RED}FAIL${RESET}  could not extract draft stem from: ${create_body}"
-    FAIL=$(( FAIL + 1 ))
-    DRAFT_STEM="test-draft-fallback"
-fi
-
-# CMS edit page for the draft
-code=$("${AUTHED_CURL[@]}" -o /dev/null -w "%{http_code}" "$BASE/cms/edit/${DRAFT_STEM}")
-check "GET /cms/edit/${DRAFT_STEM} → 200" "$code" "200"
-
-# Update the draft
-update_resp=$("${AUTHED_CURL[@]}" \
-    -X PATCH "$BASE/api/drafts/${DRAFT_STEM}" \
-    -H "Content-Type: application/json" \
-    -d "{\"summary\":\"Updated summary\"}" \
-    -w '\n%{http_code}')
-update_code="${update_resp##*$'\n'}"
-check "PATCH /api/drafts/${DRAFT_STEM} → 200" "$update_code" "200"
-
-# Publish the draft
-publish_resp=$("${AUTHED_CURL[@]}" \
-    -X POST "$BASE/api/publish/${DRAFT_STEM}" \
-    -w '\n%{http_code}')
-publish_code="${publish_resp##*$'\n'}"
-publish_body="${publish_resp%$'\n'${publish_code}}"
-check "POST /api/publish/${DRAFT_STEM} → 200" "$publish_code" "200"
-check_contains "publish → published=true" "$publish_body" "published"
-
-# Published post should be accessible
-sleep 0.2
-code=$(http_code "$BASE/blog/${DRAFT_STEM}")
-check "GET /blog/${DRAFT_STEM} → 200 after publish" "$code" "200"
-
-# Unpublish
-unpublish_resp=$("${AUTHED_CURL[@]}" \
-    -X POST "$BASE/api/unpublish/${DRAFT_STEM}" \
-    -w '\n%{http_code}')
-unpublish_code="${unpublish_resp##*$'\n'}"
-unpublish_body="${unpublish_resp%$'\n'${unpublish_code}}"
-check "POST /api/unpublish/${DRAFT_STEM} → 200" "$unpublish_code" "200"
-check_contains "unpublish → unpublished=true" "$unpublish_body" "unpublished"
-
-# Clean up: delete the draft
-rm -f "/Users/mgrosvenor/m6-examples/examples/05-cms/content/drafts/${DRAFT_STEM}.json" 2>/dev/null || true
-rm -f "/Users/mgrosvenor/m6-examples/examples/05-cms/content/posts/${DRAFT_STEM}.json" 2>/dev/null || true
-
-# ── 8. Auth: logout and refresh ───────────────────────────────────────────────
-
-section "8. Auth: refresh and logout"
-
-code=$("${AUTHED_CURL[@]}" -o /dev/null -w "%{http_code}" "$BASE/auth/refresh")
-if [[ "$code" == "200" || "$code" == "204" || "$code" == "302" ]]; then
-    echo -e "  ${GREEN}PASS${RESET}  GET /auth/refresh → ${code}"
-    PASS=$(( PASS + 1 ))
-else
-    echo -e "  ${YELLOW}SKIP${RESET}  GET /auth/refresh → ${code} (may require valid token)"
-    SKIP=$(( SKIP + 1 ))
-fi
-
-logout_resp=$("${AUTHED_CURL[@]}" \
-    -X POST "$BASE/auth/logout" \
-    -w '\n%{http_code}')
-logout_code="${logout_resp##*$'\n'}"
-if [[ "$logout_code" == "200" || "$logout_code" == "302" || "$logout_code" == "204" ]]; then
-    echo -e "  ${GREEN}PASS${RESET}  POST /auth/logout → ${logout_code}"
-    PASS=$(( PASS + 1 ))
-else
-    echo -e "  ${RED}FAIL${RESET}  POST /auth/logout → ${logout_code}"
-    FAIL=$(( FAIL + 1 ))
-fi
-
-# After logout, CMS should deny access
-sleep 0.1
-code=$("${AUTHED_CURL[@]}" -o /dev/null -w "%{http_code}" "$BASE/cms")
-if [[ "$code" == "302" || "$code" == "401" || "$code" == "403" ]]; then
-    echo -e "  ${GREEN}PASS${RESET}  GET /cms after logout → ${code} (access denied)"
-    PASS=$(( PASS + 1 ))
-else
-    echo -e "  ${YELLOW}SKIP${RESET}  GET /cms after logout → ${code} (session may persist on server)"
-    SKIP=$(( SKIP + 1 ))
-fi
-
-# ── 9. Error handling ─────────────────────────────────────────────────────────
-
-section "9. Error handling"
-
-code=$(http_code "$BASE/this-path-does-not-exist")
-check "GET /nonexistent → 404" "$code" "404"
-
-code=$(http_code "$BASE/blog/this-post-does-not-exist-xyz")
-check "GET /blog/nonexistent → 200 (not-found page)" "$code" "200"
-body=$(http_body "$BASE/blog/this-post-does-not-exist-xyz")
-check_contains "GET /blog/nonexistent → shows not-found message" "$body" "not found"
-
-# ── Summary ───────────────────────────────────────────────────────────────────
-
-echo ""
-echo "═══════════════════════════════════════════════════════"
-TOTAL=$(( PASS + FAIL + SKIP ))
-echo -e "  Results: ${GREEN}${PASS} passed${RESET}  ${RED}${FAIL} failed${RESET}  ${YELLOW}${SKIP} skipped${RESET}  (${TOTAL} total)"
-echo "═══════════════════════════════════════════════════════"
-
-rm -f /tmp/m6-test-cookies.txt
-
-if [[ $FAIL -gt 0 ]]; then
+c=$(code "$BASE/")
+check "GET / reachable" "$c" "200"
+if [[ "$c" != "200" ]]; then
+    echo
+    echo "${RED}The stack is not answering. Start it with ./dev.sh and try again.${RESET}" >&2
+    echo "  Logs: $SITE/logs/" >&2
     exit 1
 fi
+
+# ── 1. Both wire protocols ───────────────────────────────────────────────────
+#
+# The old suite pinned --http1.1 for everything, so HTTP/2 was never once
+# exercised by the example that runs the full stack.
+
+section "1. HTTP/1.1 and HTTP/2"
+
+read -r h1code h1ver < <(curl -sk --http1.1 -o /dev/null -w '%{http_code} %{http_version}' "$BASE/")
+check "HTTP/1.1 GET / status"  "$h1code" "200"
+check "HTTP/1.1 negotiated"    "$h1ver"  "1.1"
+
+read -r h2code h2ver < <(curl -sk --http2 -o /dev/null -w '%{http_code} %{http_version}' "$BASE/")
+check "HTTP/2 GET / status"    "$h2code" "200"
+check "HTTP/2 negotiated"      "$h2ver"  "2"
+
+# Same bytes over both, or one of them is serving something else.
+h1len=$(curl -sk --http1.1 -o /dev/null -w '%{size_download}' "$BASE/")
+h2len=$(curl -sk --http2   -o /dev/null -w '%{size_download}' "$BASE/")
+check "HTTP/2 serves the same body length as HTTP/1.1" "$h2len" "$h1len"
+
+# ── 2. Public pages ──────────────────────────────────────────────────────────
+
+section "2. Public pages"
+
+for p in / /about /blog /blog/quick-start /blog/architecture; do
+    check "GET $p" "$(code "$BASE$p")" "200"
+done
+
+b=$(body "$BASE/")
+check_contains "GET / names the site"        "$b" "m6"
+check_contains "GET / lists recent posts"    "$b" "Recent Posts"
+
+check_contains "GET /blog lists a post"      "$(body "$BASE/blog")" "quick-start"
+check_contains "GET /blog/quick-start renders its title" \
+    "$(body "$BASE/blog/quick-start")" "Quick Start"
+
+# An unknown post is m6-html's not-found page: 200 with the site's chrome, not a
+# bare 404, because the template renders it. An unknown *path* is a real 404.
+nf=$(body "$BASE/blog/no-such-post-here")
+check "GET /blog/<unknown> renders the not-found page" \
+    "$(code "$BASE/blog/no-such-post-here")" "200"
+check_contains "GET /blog/<unknown> says not found" "$nf" "not found"
+check "GET an unrouted path is a real 404" \
+    "$(code "$BASE/this-path-does-not-exist")" "404"
+
+# ── 3. Static assets, through m6-file ────────────────────────────────────────
+#
+# Every one of these was a 502 until 2026-09-14: m6-file became an `App` service
+# and every route has to name its handler, so the example's config was refused at
+# startup and the service exited before binding. Nothing in the suite noticed,
+# because the suite had no asset check that could tell 502 from 200.
+
+section "3. Static assets"
+
+check "GET /assets/style.css" "$(code "$BASE/assets/style.css")" "200"
+ct=$(header_value 'content-type' "$(heads "$BASE/assets/style.css")")
+check_contains "style.css is served as CSS" "$ct" "text/css"
+check "GET /assets/easymde.min.js" "$(code "$BASE/assets/easymde.min.js")" "200"
+check "a missing asset is 404" "$(code "$BASE/assets/no-such-file.css")" "404"
+
+# Nested paths: the route is `/assets/{*relpath}`, the explicit wildcard. A bare
+# `{relpath}` matches one segment only, which serves the top of the tree and
+# 404s everything under it -- the failure is invisible on a flat assets dir.
+check "a nested asset, two levels down"  "$(code "$BASE/assets/vditor/dist/index.css")" "200"
+check "a nested asset, four levels down" "$(code "$BASE/assets/vditor/dist/js/i18n/en_US.js")" "200"
+
+# Conditional requests: the cache is useless if revalidation does not work.
+etag=$(header_value 'etag' "$(heads "$BASE/assets/style.css")")
+if [[ -n "$etag" ]]; then
+    pass "style.css carries an ETag ($etag)"
+    check "If-None-Match on the same ETag is 304" \
+        "$(code -H "If-None-Match: $etag" "$BASE/assets/style.css")" "304"
+    check "If-None-Match on a stale ETag is 200" \
+        "$(code -H 'If-None-Match: "0000000-0000"' "$BASE/assets/style.css")" "200"
+else
+    fail "style.css carries an ETag — none present, so revalidation cannot work"
+fi
+
+# ── 4. Compression ───────────────────────────────────────────────────────────
+#
+# m6-http is a cache, not a transformer: compression is the backend's job and the
+# edge only promises what the backend can deliver. `Vary: Accept-Encoding` is the
+# part that matters for a shared cache -- without it one client's gzip response
+# is served to a client that cannot read it.
+
+section "4. Compression"
+
+hz=$(heads -H 'Accept-Encoding: gzip' "$BASE/")
+check_contains "gzip requested, gzip returned"   "$(header_value 'content-encoding' "$hz")" "gzip"
+check_contains "the response varies on Accept-Encoding" "$(header_value 'vary' "$hz")" "Accept-Encoding"
+
+hi=$(heads -H 'Accept-Encoding: identity' "$BASE/")
+check_absent "identity requested, nothing encoded" "$(header_value 'content-encoding' "$hi")" "gzip"
+
+# ── 5. The cache actually caches ─────────────────────────────────────────────
+#
+# m6-http exposes no x-cache header, so this reads `Age`, which RFC 9111 7.1
+# defines as the time since the response was generated. A second request that
+# comes back with a non-zero Age and the same ETag was served from the store and
+# not fetched again.
+
+section "5. The cache"
+
+e1=$(header_value 'etag' "$(heads "$BASE/blog")")
+sleep 2
+h2h=$(heads "$BASE/blog")
+e2=$(header_value 'etag' "$h2h")
+age=$(header_value 'age' "$h2h")
+check "the ETag is stable across requests" "$e2" "$e1"
+if [[ -n "$age" ]] && [[ "$age" -ge 1 ]]; then
+    pass "the second request was served from the cache (Age: $age)"
+else
+    fail "the second request has Age '${age:-<absent>}', so nothing was cached"
+fi
+
+# ── 6. Security headers at the edge ──────────────────────────────────────────
+
+section "6. Security headers"
+
+hh=$(heads "$BASE/")
+check_contains "HSTS is set"                  "$(header_value 'strict-transport-security' "$hh")" "max-age="
+check_contains "a Content-Security-Policy is set" "$(header_value 'content-security-policy' "$hh")" "default-src"
+check_contains "sniffing is disabled"         "$(header_value 'x-content-type-options' "$hh")" "nosniff"
+
+# ── 7. Request methods ───────────────────────────────────────────────────────
+#
+# m6-http validates the method before routing, from `[server] allowed_methods`.
+# This example declares GET, HEAD, POST, PATCH and DELETE because render-cms
+# registers PATCH and DELETE routes. Until that line existed, every PATCH was
+# 405 at the edge while the handler behind it was registered and working.
+#
+# 405 and 501 are not interchangeable (RFC 9110 15.5.6 and 15.6.2): 405 says the
+# server knows the method, 501 says it does not. Answering 405 to an invented
+# verb claims knowledge the server does not have.
+
+section "7. Request methods"
+
+allow=$(header_value 'allow' "$(heads -X PUT "$BASE/")")
+check "an undeclared method is 405" "$(code -X PUT "$BASE/")" "405"
+check_contains "405 carries Allow, listing GET"    "$allow" "GET"
+check_contains "405 carries Allow, listing PATCH"  "$allow" "PATCH"
+check_contains "405 carries Allow, listing DELETE" "$allow" "DELETE"
+check_absent   "Allow does not list the refused method" "$allow" "PUT"
+check "an invented verb is 501, not 405" "$(code -X FOO "$BASE/")" "501"
+
+# ── 8. Contact form ──────────────────────────────────────────────────────────
+
+section "8. Contact form"
+
+check "GET /contact" "$(code "$BASE/contact")" "200"
+cb=$(body "$BASE/contact")
+check_contains "the contact page has a form"  "$cb" "<form"
+check_contains "the form has a message field" "$cb" "message"
+
+pb=$(body "$BASE/contact" -X POST \
+    -H 'Content-Type: application/x-www-form-urlencoded' \
+    -d 'name=Test+Sender&email=sender%40example.com&message=Sent+by+test.sh')
+check "POST /contact" "$(code "$BASE/contact" -X POST \
+    -H 'Content-Type: application/x-www-form-urlencoded' \
+    -d 'name=Test+Sender&email=sender%40example.com&message=Sent+by+test.sh')" "200"
+check_contains "the confirmation names the sender" "$pb" "Test Sender"
+
+# ── 9. Login page ────────────────────────────────────────────────────────────
+
+section "9. Login page"
+
+check "GET /login" "$(code "$BASE/login")" "200"
+lb=$(body "$BASE/login")
+check_contains "the login page has a form"           "$lb" "<form"
+check_contains "the login page has a password field" "$lb" "password"
+
+# ── 10. Authentication ───────────────────────────────────────────────────────
+
+section "10. Authentication"
+
+# A wrong password is refused. The form path redirects back to /login with an
+# error rather than returning 401, so that redirect is the assertion.
+wrong=$(heads -X POST "$BASE/auth/login" \
+    -H 'Content-Type: application/x-www-form-urlencoded' \
+    -d "username=${CMS_USER}&password=definitely-not-the-password")
+check_contains "a wrong password redirects to /login with an error" \
+    "$(header_value 'location' "$wrong")" "/login?error=invalid"
+check_absent "a wrong password sets no session cookie" \
+    "$(printf '%s\n' "$wrong" | grep '^set-cookie:' | grep 'session=' || true)" "session="
+
+# The real login. -c writes the jar, so the cookies are kept for what follows.
+rm -f "$JAR"
+lh=$(curl -sk --http1.1 -c "$JAR" -D - -o /dev/null -X POST "$BASE/auth/login" \
+    -H 'Content-Type: application/x-www-form-urlencoded' \
+    -d "username=${CMS_USER}&password=${CMS_PASS}" | tr -d '\r')
+check "POST /auth/login redirects on success" \
+    "$(printf '%s\n' "$lh" | grep -c '^HTTP/.* 302')" "1"
+
+sc=$(printf '%s\n' "$lh" | grep -i '^set-cookie:' | grep 'session=')
+check_contains "login sets a session cookie"   "$sc" "session="
+check_contains "the session cookie is HttpOnly" "$sc" "HttpOnly"
+check_contains "the session cookie is Secure"   "$sc" "Secure"
+check_contains "the session cookie is SameSite" "$sc" "SameSite"
+
+rc=$(printf '%s\n' "$lh" | grep -i '^set-cookie:' | grep 'refresh=')
+check_contains "login sets a refresh cookie"    "$rc" "refresh="
+check_contains "the refresh cookie is scoped to /auth/refresh" "$rc" "Path=/auth/refresh"
+
+check "POST /auth/refresh with the cookie" \
+    "$(authed_code -X POST "$BASE/auth/refresh")" "302"
+
+# ── 11. Protected pages ──────────────────────────────────────────────────────
+
+section "11. Protected pages"
+
+check "GET /cms with no credentials is refused" "$(code "$BASE/cms")" "401"
+check "GET /cms/new with no credentials is refused" "$(code "$BASE/cms/new")" "401"
+check "POST /api/drafts with no credentials is refused" \
+    "$(code -X POST "$BASE/api/drafts" -H 'Content-Type: application/json' -d '{}')" "401"
+
+check "GET /cms as an editor" "$(authed_code "$BASE/cms")" "200"
+check_contains "the dashboard mentions drafts" "$(authed "$BASE/cms")" "draft"
+check "GET /cms/new as an editor" "$(authed_code "$BASE/cms/new")" "200"
+check_contains "the editor has a title field" "$(authed "$BASE/cms/new")" "title"
+
+# The CMS must never be cached at the edge: it is per-user and it is behind auth.
+cmsh=$(authed -D - -o /dev/null "$BASE/cms" | tr -d '\r' | tr 'A-Z' 'a-z')
+cc=$(header_value 'cache-control' "$cmsh")
+if printf '%s' "$cc" | grep -qE 'no-store|private|no-cache'; then
+    pass "/cms is not cacheable by a shared cache ($cc)"
+else
+    fail "/cms Cache-Control is '${cc:-<absent>}', which lets a shared cache keep it"
+fi
+
+# ── 12. The publish lifecycle ────────────────────────────────────────────────
+#
+# The part the old suite got wrong. It read the API's own reply -- "the response
+# said unpublished, therefore the post is unpublished" -- and never asked the
+# public site. Unpublishing was in fact doing nothing: `update_index` worked out
+# which posts belonged to the CMS from the files still present, and the file had
+# just been deleted, so the entry was reclassified as markdown-sourced and
+# preserved. The post stayed listed and stayed readable.
+#
+# So every step here is checked against what a visitor sees, not against what the
+# API claims it did.
+
+section "12. Draft, publish, unpublish"
+
+MARKER="e2e-marker-$$"
+created=$(authed -X POST "$BASE/api/drafts" -H 'Content-Type: application/json' \
+    -d "{\"title\":\"E2E Lifecycle $$\",\"body\":\"$MARKER\",\"summary\":\"created by test.sh\",\"tags\":[\"test\"],\"date\":\"2026-09-14\"}" \
+    -w '\n%{http_code}')
+ccode="${created##*$'\n'}"
+cbody="${created%$'\n'${ccode}}"
+check "POST /api/drafts creates a draft" "$ccode" "201"
+
+STEM=$(printf '%s' "$cbody" | json_field stem)
+if [[ -z "$STEM" ]]; then
+    fail "the create response carries a stem — got: $cbody"
+    STEM="e2e-lifecycle-$$"      # keep going so the rest still reports
+else
+    pass "the create response carries a stem ($STEM)"
+fi
+
+check "GET /cms/edit/<stem>" "$(authed_code "$BASE/cms/edit/$STEM")" "200"
+
+# A draft is not public.
+check_absent "an unpublished draft is not readable at its blog URL" \
+    "$(body "$BASE/blog/$STEM")" "$MARKER"
+check_absent "an unpublished draft is not listed on /blog" \
+    "$(body "$BASE/blog")" "$STEM"
+
+check "PATCH /api/drafts/<stem> updates it" \
+    "$(authed_code -X PATCH "$BASE/api/drafts/$STEM" \
+        -H 'Content-Type: application/json' -d '{"summary":"updated by test.sh"}')" "200"
+
+pubresp=$(authed -X POST "$BASE/api/publish/$STEM" -w '\n%{http_code}')
+pubcode="${pubresp##*$'\n'}"
+check "POST /api/publish/<stem>" "$pubcode" "200"
+
+# Publishing touches site.toml, which reloads the routes and drops the cached
+# index. Give the watcher a moment; this is a real reload, not a sleep for luck.
+sleep 2
+
+check "the published post is readable" "$(code "$BASE/blog/$STEM")" "200"
+check_contains "the published post serves its body" "$(body "$BASE/blog/$STEM")" "$MARKER"
+check_contains "the published post is listed on /blog" "$(body "$BASE/blog")" "$STEM"
+
+unpubresp=$(authed -X POST "$BASE/api/unpublish/$STEM" -w '\n%{http_code}')
+unpubcode="${unpubresp##*$'\n'}"
+check "POST /api/unpublish/<stem>" "$unpubcode" "200"
+sleep 2
+
+# The three checks that matter, and the three the old suite did not make.
+check_absent "an unpublished post is no longer listed on /blog" \
+    "$(body "$BASE/blog")" "$STEM"
+check_absent "an unpublished post no longer serves its body" \
+    "$(body "$BASE/blog/$STEM")" "$MARKER"
+check_file_absent "an unpublished post is out of the index" \
+    "$SITE/data/posts.json" "\"$STEM\""
+
+# Unpublishing returns the post to the drafts folder rather than destroying it.
+if [[ -f "$SITE/content/drafts/$STEM.json" ]]; then
+    pass "unpublishing keeps the draft for re-editing"
+else
+    fail "unpublishing lost the draft: no content/drafts/$STEM.json"
+fi
+
+# Posts that came from markdown must survive every rebuild of the index.
+check_file_contains "markdown-sourced posts survive the rebuild" \
+    "$SITE/data/posts.json" "quick-start"
+
+check "DELETE /api/drafts/<stem>" "$(authed_code -X DELETE "$BASE/api/drafts/$STEM")" "200"
+
+# Nothing of the test's own may be left in the site tree.
+left=0
+[[ -f "$SITE/content/drafts/$STEM.json" ]] && left=1
+[[ -f "$SITE/content/posts/$STEM.json"  ]] && left=1
+check "the test leaves no content behind" "$left" "0"
+
+# ── 13. Logout ───────────────────────────────────────────────────────────────
+
+section "13. Logout"
+
+# -b and -c together, so the jar is updated by the response. The old suite passed
+# only -b, so the cookie-clearing Set-Cookie headers were read and thrown away,
+# the stale token kept being sent, and the check was written off as "the session
+# may persist on the server".
+loh=$(curl -sk --http1.1 -b "$JAR" -c "$JAR" -D - -o /dev/null \
+    -X POST "$BASE/auth/logout" | tr -d '\r')
+check "POST /auth/logout redirects" "$(printf '%s\n' "$loh" | grep -c '^HTTP/.* 302')" "1"
+
+cleared=$(printf '%s\n' "$loh" | grep -i '^set-cookie:' | grep 'session=')
+check_contains "logout clears the session cookie" "$cleared" "Max-Age=0"
+clearedr=$(printf '%s\n' "$loh" | grep -i '^set-cookie:' | grep 'refresh=')
+check_contains "logout clears the refresh cookie" "$clearedr" "Max-Age=0"
+
+check "after logout the CMS is refused" "$(authed_code "$BASE/cms")" "401"
+
+# ── 14. The login throttle ───────────────────────────────────────────────────
+#
+# m6-auth-server allows a number of FAILED logins per IP per window. Two
+# properties, and both used to be wrong:
+#
+#   - it counted every login, success included, and never cleared the count. Six
+#     logins in fifteen minutes locked the IP out whether or not any password was
+#     wrong, which made this suite unreliable by construction: it logs in several
+#     times, so the third run inside the window got 429 and every authenticated
+#     check after it failed while pointing at authentication.
+#   - the limits were two `const`s, so nothing could ask for a different budget.
+#
+# This example's m6-auth.conf sets a short window on purpose, so the recovery can
+# be measured rather than waited out. Production leaves the section out.
+
+section "14. The login throttle"
+
+max=$(sed -n 's/^[[:space:]]*max_attempts[[:space:]]*=[[:space:]]*\([0-9]*\).*/\1/p' \
+    "$SITE/configs/m6-auth.conf" | tail -1)
+window=$(sed -n 's/^[[:space:]]*window_secs[[:space:]]*=[[:space:]]*\([0-9]*\).*/\1/p' \
+    "$SITE/configs/m6-auth.conf" | tail -1)
+
+if [[ -z "$max" || -z "$window" ]]; then
+    fail "configs/m6-auth.conf sets [rate_limit] max_attempts and window_secs — one or both missing, so the throttle cannot be measured"
+elif [[ "$window" -gt 30 ]]; then
+    fail "configs/m6-auth.conf has window_secs=$window; this is the development config and needs a short window so recovery can be measured"
+else
+    pass "the throttle is configured for testing (max_attempts=$max, window_secs=${window}s)"
+
+    # Successes must not consume the budget. More of them than the whole budget,
+    # so this fails outright if counting ever comes back.
+    ok=0
+    for _ in $(seq 1 $(( max + 3 ))); do
+        [[ "$(code -X POST "$BASE/auth/login" \
+            -H 'Content-Type: application/x-www-form-urlencoded' \
+            -d "username=${CMS_USER}&password=${CMS_PASS}")" == "302" ]] && ok=$(( ok + 1 ))
+    done
+    check "$(( max + 3 )) correct logins are never throttled" "$ok" "$(( max + 3 ))"
+
+    # Wrong passwords do consume it.
+    refused=0
+    for _ in $(seq 1 "$max"); do
+        [[ "$(code -X POST "$BASE/auth/login" \
+            -H 'Content-Type: application/x-www-form-urlencoded' \
+            -d "username=${CMS_USER}&password=wrong-on-purpose")" == "302" ]] && refused=$(( refused + 1 ))
+    done
+    check "the first $max wrong passwords are refused, not throttled" "$refused" "$max"
+
+    blocked=$(heads -X POST "$BASE/auth/login" \
+        -H 'Content-Type: application/x-www-form-urlencoded' \
+        -d "username=${CMS_USER}&password=wrong-on-purpose")
+    check "wrong password number $(( max + 1 )) is throttled" \
+        "$(printf '%s\n' "$blocked" | grep -c '^HTTP/.* 429')" "1"
+    check_nonempty "the 429 carries Retry-After" "$(header_value 'retry-after' "$blocked")"
+
+    # While blocked, even the right password is refused. That is the point of it.
+    check "the right password is refused while the IP is blocked" \
+        "$(code -X POST "$BASE/auth/login" \
+            -H 'Content-Type: application/x-www-form-urlencoded' \
+            -d "username=${CMS_USER}&password=${CMS_PASS}")" "429"
+
+    # And the block lifts, leaving nothing behind for the next run.
+    sleep $(( window + 2 ))
+    check "the throttle lifts after its window" \
+        "$(code -X POST "$BASE/auth/login" \
+            -H 'Content-Type: application/x-www-form-urlencoded' \
+            -d "username=${CMS_USER}&password=${CMS_PASS}")" "302"
+fi
+
+# ── Summary ──────────────────────────────────────────────────────────────────
+
+echo
+echo "═══════════════════════════════════════════════════════"
+printf '  %s%d passed%s  %s%d failed%s  (%d checks)\n' \
+    "$GREEN" "$PASS" "$RESET" "$RED" "$FAIL" "$RESET" "$(( PASS + FAIL ))"
+echo "═══════════════════════════════════════════════════════"
+
+[[ $FAIL -eq 0 ]] || exit 1
