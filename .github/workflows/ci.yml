@@ -1,6 +1,8 @@
 name: CI
 
-# Every push and every pull request.
+# Pull requests, not pushes. Owner's call, and the same reasoning as m6's own CI:
+# m6's build-host checks already build this repository and run example 05's suite
+# on Linux before a merge, so a push has been vouched for. A pull request has not.
 #
 # ── Why this exists ──────────────────────────────────────────────────────────
 #
@@ -30,8 +32,6 @@ name: CI
 # manual trigger with a different ref to check against a release tag.
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
