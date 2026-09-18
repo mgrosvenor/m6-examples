@@ -1246,7 +1246,7 @@ dependencies = [
 
 [[package]]
 name = "m6-core"
-version = "1.0.0"
+version = "1.8.1"
 dependencies = [
  "anyhow",
  "base64",

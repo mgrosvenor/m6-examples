@@ -171,25 +171,119 @@ fn https_request(
     let mut raw = Vec::new();
     stream.read_to_end(&mut raw).ok(); // EOF is normal with Connection: close
 
-    let raw_str = String::from_utf8_lossy(&raw);
-    let split = raw_str.find("\r\n\r\n").unwrap_or(raw_str.len());
-    let header_section = &raw_str[..split];
-    let body_str = if split + 4 <= raw_str.len() { &raw_str[split + 4..] } else { "" };
+    Ok(parse_response(&String::from_utf8_lossy(&raw)))
+}
 
-    let mut lines = header_section.split("\r\n");
-    let status_line = lines.next().unwrap_or("");
-    let status: u16 = status_line.split_whitespace().nth(1)
+/// The status code from a header block's first line, or 0 if there isn't one.
+fn status_of(hdr_sec: &str) -> u16 {
+    hdr_sec
+        .split("\r\n")
+        .next()
+        .unwrap_or("")
+        .split_whitespace()
+        .nth(1)
         .and_then(|s| s.parse().ok())
-        .unwrap_or(0);
+        .unwrap_or(0)
+}
+
+/// Parse a raw HTTP/1.1 response, discarding any 1xx that precedes the real one.
+///
+/// RFC 9110 15.2 requires a client to parse and discard any number of 1xx
+/// responses before the final one. `m6-http` sends `103 Early Hints` ahead of
+/// the real response on any route carrying preload hints, and this parser took
+/// the FIRST `\r\n\r\n` and the FIRST status line, so it read 103 and handed the
+/// actual response back as the body:
+///
+/// ```text
+/// FAIL  GET / reachable — expected 200, got 103
+/// ```
+///
+/// The same defect was in `09-global-deployment`'s client. Both are fixed the
+/// same way; neither is a server regression. They began failing when early hints
+/// started firing, which is m6 #74/#78 landing. m6 issue #86.
+fn parse_response(s: &str) -> Response {
+    let mut cursor = 0usize;
+    let (hdr_sec, body) = loop {
+        let rest = &s[cursor..];
+        let split = rest.find("\r\n\r\n").unwrap_or(rest.len());
+        let after = cursor + if split + 4 <= rest.len() { split + 4 } else { rest.len() };
+
+        // A 1xx carries no body and is always followed by another response, so
+        // step over it. `after < s.len()` stops this looping on a truncated
+        // response that ends with an informational one.
+        if (100..200).contains(&status_of(&rest[..split])) && after < s.len() {
+            cursor = after;
+            continue;
+        }
+        break (&rest[..split], &s[after..]);
+    };
 
     let mut headers = Vec::new();
-    for line in lines {
+    for line in hdr_sec.split("\r\n").skip(1) {
         if let Some(colon) = line.find(':') {
             headers.push((line[..colon].trim().to_string(), line[colon+1..].trim().to_string()));
         }
     }
 
-    Ok(Response { status, headers, body: body_str.to_string() })
+    Response { status: status_of(hdr_sec), headers, body: body.to_string() }
+}
+
+#[cfg(test)]
+mod response_parsing {
+    use super::parse_response;
+
+    #[test]
+    fn a_plain_response_is_unchanged() {
+        let r = parse_response("HTTP/1.1 200 OK\r\ncontent-type: text/html\r\n\r\nhello");
+        assert_eq!(r.status, 200);
+        assert_eq!(r.body, "hello");
+    }
+
+    #[test]
+    fn early_hints_are_skipped_and_the_real_status_is_read() {
+        let raw = "HTTP/1.1 103 Early Hints\r\n\
+                   Link: </assets/css/style.css>; rel=preload; as=style\r\n\
+                   \r\n\
+                   HTTP/1.1 200 OK\r\n\
+                   content-type: text/html\r\n\
+                   \r\n\
+                   <!doctype html>";
+        let r = parse_response(raw);
+        assert_eq!(r.status, 200, "must report the FINAL status, not the 103");
+        assert_eq!(r.body, "<!doctype html>");
+    }
+
+    #[test]
+    fn set_cookie_on_the_final_response_survives_the_skip() {
+        // This suite logs in, so the header it cares about most must come from
+        // the real response rather than being lost with the discarded 103.
+        let raw = "HTTP/1.1 103 Early Hints\r\n\
+                   Link: </a.css>; rel=preload\r\n\
+                   \r\n\
+                   HTTP/1.1 302 Found\r\n\
+                   set-cookie: session=abc; HttpOnly\r\n\
+                   location: /cms\r\n\
+                   \r\n";
+        let r = parse_response(raw);
+        assert_eq!(r.status, 302);
+        assert!(
+            r.headers.iter().any(|(k, v)| k == "set-cookie" && v.contains("session=abc")),
+            "headers: {:?}",
+            r.headers
+        );
+    }
+
+    #[test]
+    fn a_truncated_informational_response_does_not_loop() {
+        let r = parse_response("HTTP/1.1 103 Early Hints\r\nLink: </a.css>\r\n\r\n");
+        assert_eq!(r.status, 103);
+    }
+
+    #[test]
+    fn garbage_does_not_panic() {
+        assert_eq!(parse_response("").status, 0);
+        assert_eq!(parse_response("not http at all").status, 0);
+    }
 }
 
 fn get_with_cookie_str(addr: &str, path: &str, cookie_str: &str, tls: Arc<rustls::ClientConfig>)
