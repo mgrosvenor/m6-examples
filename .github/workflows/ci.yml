@@ -126,6 +126,41 @@ jobs:
       # rather than for anything wrong with them (its own integration test covers
       # it, and ran above). An example with neither a config nor a reason
       # recorded here fails the job, rather than being quietly stepped over.
+      # A fresh checkout has no keys/: they are gitignored, and each example's
+      # dev.sh generates them. The config parse below validates that tls_cert
+      # exists, so without this EVERY example is rejected for a missing file and
+      # the job fails saying "9 config(s) rejected by m6-http" while nothing is
+      # wrong with any of them.
+      #
+      # That is what this job did on every run since it was added: its only run
+      # on `main` failed the same way. tools/build-host-tests.sh in the m6
+      # repository has carried this step all along, which is why the build host
+      # passed and CI never did. Kept in step with that block deliberately.
+      - name: Development certificates and auth keys
+        working-directory: m6-examples
+        run: |
+          for d in examples/*/; do
+            [ -f "$d/dev.sh" ] || continue
+            mkdir -p "$d/keys"
+            if [ ! -f "$d/keys/dev.pem" ]; then
+              openssl req -x509 -newkey rsa:2048 -sha256 -days 365 -nodes \
+                -keyout "$d/keys/dev-key.pem" -out "$d/keys/dev.pem" \
+                -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" 2>/dev/null
+            fi
+            # PKCS#8 (`genpkey`), not SEC1: m6-auth-server refuses SEC1 with
+            # "invalid private key (tried EC and RSA): InvalidKeyFormat".
+            # `ec_param_enc:named_curve` too, so the key carries the prime256v1
+            # OID rather than explicit curve parameters, which the token signer
+            # rejects with "JWT encode error: InvalidEcdsaKey".
+            if [ ! -f "$d/keys/auth.pub" ]; then
+              openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 \
+                -pkeyopt ec_param_enc:named_curve -out "$d/keys/auth.pem" 2>/dev/null
+              openssl pkey -in "$d/keys/auth.pem" -pubout -out "$d/keys/auth.pub" 2>/dev/null
+              chmod 600 "$d/keys/auth.pem" 2>/dev/null || true
+            fi
+          done
+          echo "certificates present"
+
       - name: Every example's config parses
         working-directory: m6-examples
         run: |
