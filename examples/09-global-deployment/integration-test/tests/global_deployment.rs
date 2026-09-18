@@ -158,24 +158,155 @@ fn https_get(addr: &str, path: &str, extra_headers: &[(&str, &str)],
     let mut raw = Vec::new();
     stream.read_to_end(&mut raw).ok();
 
-    let s = String::from_utf8_lossy(&raw);
-    let split = s.find("\r\n\r\n").unwrap_or(s.len());
-    let hdr_sec = &s[..split];
-    let body = if split + 4 <= s.len() { &s[split + 4..] } else { "" };
+    Ok(parse_response(&String::from_utf8_lossy(&raw)))
+}
 
-    let mut lines = hdr_sec.split("\r\n");
-    let status_line = lines.next().unwrap_or("");
-    let status: u16 = status_line.split_whitespace().nth(1)
-        .and_then(|s| s.parse().ok()).unwrap_or(0);
+/// The status code from a header block's first line, or 0 if there isn't one.
+fn status_of(hdr_sec: &str) -> u16 {
+    hdr_sec
+        .split("\r\n")
+        .next()
+        .unwrap_or("")
+        .split_whitespace()
+        .nth(1)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0)
+}
+
+/// Parse a raw HTTP/1.1 response, discarding any 1xx that precedes the real one.
+///
+/// # Why the 1xx skip is not optional
+///
+/// RFC 9110 15.2 requires a client to parse and discard any number of 1xx
+/// responses before the final one. m6-http sends `103 Early Hints` ahead of the
+/// real response on any route carrying preload hints, so the wire reads:
+///
+/// ```text
+/// HTTP/1.1 103 Early Hints
+/// Link: </assets/css/style.css>; rel=preload; as=style
+///                                     <- the first blank line is HERE
+/// HTTP/1.1 200 OK
+/// ...
+/// ```
+///
+/// This took the FIRST `\r\n\r\n` and the FIRST status line, so it read 103 and
+/// handed the actual 200 response back as the body. Every assertion in this file
+/// then failed against a perfectly correct server:
+///
+/// ```text
+/// FAIL  origin GET /blog → 200 — expected 200, got 103
+/// ```
+///
+/// It is separated from `https_get` so it can be tested on bytes, with no
+/// listener and no TLS: the defect was in parsing, and a test that needs a
+/// running six-node topology to exercise the parser is a test nobody runs.
+fn parse_response(s: &str) -> Response {
+    let mut cursor = 0usize;
+    let (hdr_sec, body) = loop {
+        let rest = &s[cursor..];
+        let split = rest.find("\r\n\r\n").unwrap_or(rest.len());
+        let after = cursor + if split + 4 <= rest.len() { split + 4 } else { rest.len() };
+
+        // A 1xx carries no body and is always followed by another response, so
+        // step over it and read the next block. `after < s.len()` stops this
+        // looping on a truncated response that ends with an informational one.
+        if (100..200).contains(&status_of(&rest[..split])) && after < s.len() {
+            cursor = after;
+            continue;
+        }
+        break (&rest[..split], &s[after..]);
+    };
 
     let mut headers = Vec::new();
-    for line in lines {
+    for line in hdr_sec.split("\r\n").skip(1) {
         if let Some(colon) = line.find(':') {
             headers.push((line[..colon].trim().to_string(), line[colon+1..].trim().to_string()));
         }
     }
 
-    Ok(Response { status, headers, body: body.to_string() })
+    Response { status: status_of(hdr_sec), headers, body: body.to_string() }
+}
+
+#[cfg(test)]
+mod response_parsing {
+    use super::parse_response;
+
+    #[test]
+    fn a_plain_response_is_unchanged() {
+        let r = parse_response("HTTP/1.1 200 OK\r\ncontent-type: text/html\r\n\r\nhello");
+        assert_eq!(r.status, 200);
+        assert_eq!(r.body, "hello");
+        assert!(r.headers.iter().any(|(k, v)| k == "content-type" && v == "text/html"));
+    }
+
+    #[test]
+    fn early_hints_are_skipped_and_the_real_status_is_read() {
+        // The exact shape that broke the suite.
+        let raw = "HTTP/1.1 103 Early Hints\r\n\
+                   Link: </assets/css/style.css>; rel=preload; as=style\r\n\
+                   \r\n\
+                   HTTP/1.1 200 OK\r\n\
+                   content-type: text/html\r\n\
+                   \r\n\
+                   <!doctype html>";
+        let r = parse_response(raw);
+        assert_eq!(r.status, 200, "must report the FINAL status, not the 103");
+        assert_eq!(r.body, "<!doctype html>");
+    }
+
+    #[test]
+    fn headers_come_from_the_final_response_not_the_hints() {
+        let raw = "HTTP/1.1 103 Early Hints\r\n\
+                   Link: </a.css>; rel=preload; as=style\r\n\
+                   \r\n\
+                   HTTP/1.1 200 OK\r\n\
+                   content-type: text/html\r\n\
+                   \r\n\
+                   body";
+        let r = parse_response(raw);
+        assert!(
+            r.headers.iter().any(|(k, _)| k == "content-type"),
+            "the final response's headers must be present: {:?}",
+            r.headers
+        );
+        assert!(
+            !r.headers.iter().any(|(k, _)| k == "Link"),
+            "the 103's headers must not leak into the result: {:?}",
+            r.headers
+        );
+    }
+
+    #[test]
+    fn several_informational_responses_are_all_skipped() {
+        let raw = "HTTP/1.1 100 Continue\r\n\r\n\
+                   HTTP/1.1 103 Early Hints\r\n\
+                   Link: </a.css>; rel=preload\r\n\r\n\
+                   HTTP/1.1 204 No Content\r\n\r\n";
+        assert_eq!(parse_response(raw).status, 204);
+    }
+
+    #[test]
+    fn a_non_200_final_status_still_reads_correctly() {
+        // A 404 behind hints must not be reported as 200 or as 103.
+        let raw = "HTTP/1.1 103 Early Hints\r\n\r\nHTTP/1.1 404 Not Found\r\n\r\nnope";
+        let r = parse_response(raw);
+        assert_eq!(r.status, 404);
+        assert_eq!(r.body, "nope");
+    }
+
+    #[test]
+    fn a_truncated_informational_response_does_not_loop() {
+        // Nothing follows the 103. It must terminate and report what it saw
+        // rather than spinning on a cursor that cannot advance.
+        let r = parse_response("HTTP/1.1 103 Early Hints\r\nLink: </a.css>\r\n\r\n");
+        assert_eq!(r.status, 103);
+    }
+
+    #[test]
+    fn garbage_does_not_panic() {
+        assert_eq!(parse_response("").status, 0);
+        assert_eq!(parse_response("not http at all").status, 0);
+    }
 }
 
 fn get(addr: &str, path: &str, tls: Arc<rustls::ClientConfig>) -> Response {
