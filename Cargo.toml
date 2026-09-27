@@ -12,3 +12,19 @@ resolver = "2"
 # To build all renderers: cargo build --release
 # To build one:           cargo build --release -p render-contact
 #                         cargo build --release -p render-cms
+
+# ── Release profile ─────────────────────────────────────────────────────────
+#
+# Matches m6's, added 2026-09-27 for the same reasons and recorded in m6's
+# Cargo.toml: lto across the whole graph, one codegen unit, symbols stripped,
+# no unwind tables, and overflow checks ON in release.
+#
+# The examples are the code an outside reader copies, so a profile they should
+# not copy is worse here than in m6 itself.
+[profile.release]
+opt-level       = 3
+lto             = "fat"
+codegen-units   = 1
+strip           = "symbols"
+panic           = "abort"
+overflow-checks = true
