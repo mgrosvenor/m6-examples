@@ -424,7 +424,7 @@ impl GlobalStack {
         // Origin system config: TLS + H2C.
         let origin_sys_toml = origin_sock_dir.path().join("system.toml");
         std::fs::write(&origin_sys_toml, format!(
-            "[server]\nbind     = \"{origin_tls_addr}\"\ntls_cert = \"{}\"\ntls_key  = \"{}\"\nh2c_bind = \"{origin_h2c_addr}\"\n",
+            "[server]\nbind     = \"{origin_tls_addr}\"\ntls_cert = \"{}\"\ntls_key  = \"{}\"\nh2c_bind = \"{origin_h2c_addr}\"\ninternal_binds = [\"{origin_h2c_addr}\"]\n",
             cert_path.display(), key_path.display(),
         )).ok()?;
 

@@ -1,9 +1,11 @@
 # Sydney — system config (local dev)
 # bind     — public HTTPS on loopback (direct access + CMS)
 # h2c_bind — H2C on loopback for the 5 simulated cache nodes
+# internal_binds: the h2c listener is the backbone, so forwarded client addresses are trusted on it
 
 [server]
 bind     = "127.0.0.1:9001"
 tls_cert = "../certs/local.pem"
 tls_key  = "../certs/local-key.pem"
 h2c_bind = "127.0.0.1:9000"
+internal_binds = ["127.0.0.1:9000"]
