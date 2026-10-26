@@ -84,9 +84,9 @@ h2c_bind = "10.0.0.1:80"
 internal_binds = ["10.0.0.1:80"]
 ```
 
-- `bind` — public HTTPS on all interfaces; served to end users and Oceania GeoDNS traffic
-- `h2c_bind` — cleartext HTTP/2 on the WireGuard interface, only reachable from cache nodes
-- `internal_binds` — declares the h2c listener internal, so m6-http trusts the client address a cache node forwards. m6-http refuses to start with `h2c_bind` set and no `internal_binds`.
+- `bind`: public HTTPS on all interfaces; served to end users and Oceania GeoDNS traffic
+- `h2c_bind`: cleartext HTTP/2 on the WireGuard interface, only reachable from cache nodes
+- `internal_binds`: declares the h2c listener internal, so m6-http trusts the client address a cache node forwards. m6-http refuses to start with `h2c_bind` set and no `internal_binds`.
 
 Both listeners share the same site config and backend Unix sockets in `/run/m6/*.sock`.
 
