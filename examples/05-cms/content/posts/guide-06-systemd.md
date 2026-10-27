@@ -44,6 +44,17 @@ certbot certonly --standalone -d example.com
 # Add m6 to the ssl-cert group or adjust permissions as needed
 ```
 
+m6-http does not watch the certificate files, so a renewal has to touch the system config after it writes them.
+This hook does it, and certbot runs it after each renewal:
+
+```bash
+# /etc/letsencrypt/renewal-hooks/deploy/m6-touch.sh, mode 0755
+#!/bin/sh
+touch /etc/m6/system.toml
+```
+
+The touch is what makes m6-http read the new files, and until it runs m6-http keeps serving the previous certificate.
+
 ## Deploy the site directory
 
 ```bash

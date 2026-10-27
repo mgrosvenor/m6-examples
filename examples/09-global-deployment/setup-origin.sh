@@ -6,7 +6,6 @@ set -euo pipefail
 DOMAIN="${1:?Usage: $0 <domain> <admin-email>}"
 EMAIL="${2:?Usage: $0 <domain> <admin-email>}"
 SITE_DIR="/var/www/my-blog"
-M6_BIN="/usr/local/bin"
 
 echo "=== Installing dependencies ==="
 apt-get update -q
