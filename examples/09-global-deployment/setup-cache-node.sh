@@ -49,6 +49,13 @@ echo "=== TLS certificate ==="
 certbot certonly --standalone --agree-tos --non-interactive \
     --email "admin@${DOMAIN}" -d "$DOMAIN" || \
     echo "NOTE: certbot failed — run manually after DNS is pointed at this node."
+# Auto-renewal hook — touch the system config so m6-http reads the new cert
+mkdir -p /etc/letsencrypt/renewal-hooks/deploy
+cat > /etc/letsencrypt/renewal-hooks/deploy/m6-http-reload.sh << 'HOOK'
+#!/bin/bash
+touch /etc/m6/cache.toml
+HOOK
+chmod +x /etc/letsencrypt/renewal-hooks/deploy/m6-http-reload.sh
 
 echo "=== Installing systemd unit ==="
 install -m 644 systemd/m6-http-cache.service /etc/systemd/system/

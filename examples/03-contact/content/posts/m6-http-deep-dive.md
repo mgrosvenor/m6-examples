@@ -138,7 +138,7 @@ In custom mode, m6-http makes a `GET <errors-path>?status=N&from=<original-path>
 
 No restart. In-flight requests complete against the old config. New requests use the new config.
 
-TLS certificates reload independently when the cert or key file changes.
+TLS certificates reload independently of routes. Write the certificate and the key, then touch the system config, and m6-http reads both on HTTP/1.1, HTTP/2 and HTTP/3 without clearing the cache. It does not watch the certificate files.
 
 ## Observability
 

@@ -42,7 +42,35 @@ certbot certonly --standalone -d example.com
 # Outputs /etc/letsencrypt/live/example.com/fullchain.pem
 #         /etc/letsencrypt/live/example.com/privkey.pem
 # Add m6 to the ssl-cert group or adjust permissions as needed
+
+# System config — this node's own state, passed to m6-http as its second argument
+cat > /etc/m6/my-blog.toml << 'TOML'
+[server]
+bind     = "0.0.0.0:443"
+tls_cert = "/etc/letsencrypt/live/example.com/fullchain.pem"
+tls_key  = "/etc/letsencrypt/live/example.com/privkey.pem"
+
+[node]
+name = "origin"
+
+[auth]
+backend    = "m6-auth"
+public_key = "/etc/m6/auth.pub"
+TOML
+chown root:m6 /etc/m6/my-blog.toml
+chmod 640 /etc/m6/my-blog.toml
 ```
+
+m6-http does not watch the certificate files, so a renewal has to touch the system config after it writes them.
+This hook does it, and certbot runs it after each renewal:
+
+```bash
+# /etc/letsencrypt/renewal-hooks/deploy/m6-touch.sh, mode 0755
+#!/bin/sh
+touch /etc/m6/my-blog.toml
+```
+
+The touch is what makes m6-http read the new files, and until it runs m6-http keeps serving the previous certificate.
 
 ## Deploy the site directory
 
@@ -235,7 +263,7 @@ Group=m6
 RuntimeDirectory=m6
 RuntimeDirectoryMode=0750
 
-ExecStart=/usr/local/bin/m6-http /var/www/my-blog
+ExecStart=/usr/local/bin/m6-http /var/www/my-blog /etc/m6/my-blog.toml
 
 Restart=on-failure
 RestartSec=2
@@ -324,8 +352,8 @@ rsync target/release/render-cms user@example.com:/var/www/my-blog/bin/
 ssh user@example.com systemctl restart render-cms
 # m6-http detects socket reappear and resumes routing — other units unaffected
 
-# TLS cert renewal — certbot handles automatically
-# m6-http detects cert file change and reloads TLS context — no restart needed
+# TLS cert renewal — certbot's deploy hook touches the system config
+# m6-http reads the new certificate on the touch and reloads TLS context — no restart needed
 certbot renew
 ```
 

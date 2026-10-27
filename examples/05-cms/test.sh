@@ -474,6 +474,12 @@ check "the published post is readable" "$(code "$BASE/blog/$STEM")" "200"
 check_contains "the published post serves its body" "$(body "$BASE/blog/$STEM")" "$MARKER"
 check_contains "the published post is listed on /blog" "$(body "$BASE/blog")" "$STEM"
 
+# One touch just ahead of the call, so the touch the unpublish makes follows
+# within a few milliseconds of another. On Linux a single touch already reports
+# twice to the watcher, and a backend that holds the second report reloads after
+# m6-http has cleared its cache. This makes the same close pair on every
+# platform, so the suite exercises that gap instead of depending on the host.
+touch "$SITE/site.toml"
 unpubresp=$(authed -X POST "$BASE/api/unpublish/$STEM" -w '\n%{http_code}')
 unpubcode="${unpubresp##*$'\n'}"
 check "POST /api/unpublish/<stem>" "$unpubcode" "200"

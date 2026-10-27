@@ -221,12 +221,14 @@ certbot certonly --dns-cloudflare \
 
 Or use individual per-node certs with standalone certbot on each node.
 
-Auto-renewal hook — `m6-http` reloads the cert when `site.toml` is touched:
+Auto-renewal hook — `m6-http` reads the new certificate when its system config is touched, after certbot has written the certificate and the key:
 
 ```bash
 # /etc/letsencrypt/renewal-hooks/deploy/m6-http-reload.sh
-touch /var/www/my-blog/site.toml
+touch /etc/m6/sydney.toml
 ```
+
+On a cache node the file is `/etc/m6/cache.toml`.
 
 ## GeoDNS with ClouDNS
 

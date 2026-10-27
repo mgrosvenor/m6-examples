@@ -131,7 +131,7 @@ m6-http verifies the JWT locally using m6-auth's public key — no network call 
 
 ## Hot reload
 
-Nothing in m6 requires a restart for content changes. m6-http reloads config on `site.toml` change. Pool membership updates automatically as sockets appear and disappear. TLS certificates reload on file change. The whole system is designed to be operated without interruption.
+Nothing in m6 requires a restart for content changes. m6-http reloads config on `site.toml` change. Pool membership updates automatically as sockets appear and disappear. TLS certificates reload when the system config is touched, which a certbot deploy hook does after each renewal. The whole system is designed to be operated without interruption.
 
 ## Logging
 
