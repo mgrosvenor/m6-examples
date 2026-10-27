@@ -2,3 +2,7 @@
 bind     = "127.0.0.1:8443"
 tls_cert = "keys/dev.pem"
 tls_key  = "keys/dev-key.pem"
+
+[auth]
+backend    = "m6-auth"
+public_key = "keys/auth.pub"

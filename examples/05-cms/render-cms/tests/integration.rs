@@ -406,7 +406,8 @@ impl ServerStack {
 
         let sys_toml = sock_dir.path().join("system.toml");
         std::fs::write(&sys_toml, format!(
-            "[server]\nbind     = \"{tls_addr}\"\ntls_cert = \"{}\"\ntls_key  = \"{}\"\n",
+            "[server]\nbind     = \"{tls_addr}\"\ntls_cert = \"{}\"\ntls_key  = \"{}\"\n\n\
+             [auth]\nbackend    = \"m6-auth\"\npublic_key = \"keys/auth.pub\"\n",
             tls_cert.display(), tls_key.display(),
         )).ok()?;
 
