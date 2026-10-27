@@ -61,13 +61,9 @@ flowchart LR
 name   = "My Site"
 domain = "localhost"
 
-[server]
-bind     = "127.0.0.1:8443"
-tls_cert = "../../localhost.pem"
-tls_key  = "../../localhost-key.pem"
-
 [errors]
-mode = "internal"
+mode             = "internal"
+verbose_fallback = true
 
 [log]
 level  = "info"
@@ -75,11 +71,11 @@ format = "text"
 
 [[backend]]
 name    = "m6-html"
-sockets = "/run/m6/m6-html-*.sock"
+sockets = "/tmp/m6/m6-html*.sock"
 
 [[backend]]
 name    = "m6-file"
-sockets = "/run/m6/m6-file-*.sock"
+sockets = "/tmp/m6/m6-file*.sock"
 
 [[route]]
 path    = "/"
@@ -99,9 +95,20 @@ path    = "/assets/{relpath}"
 backend = "m6-file"
 ```
 
-`site.toml` declares backends and routes. m6-http reads it. m6-html and m6-file have their own configs (below) that further describe how to handle each route on their side.
+`site.toml` declares backends and routes. m6-http reads it. It holds nothing that differs between machines, so it has no `[server]` block. m6-html and m6-file have their own configs (below) that further describe how to handle each route on their side.
 
 The `[[route_group]]` glob expands at startup: every file under `assets/` becomes a routable URL. `assets/style.css` → `/assets/style.css`. No individual route declarations needed.
+
+## `configs/system-dev.toml`
+
+```toml
+[server]
+bind     = "127.0.0.1:8443"
+tls_cert = "keys/dev.pem"
+tls_key  = "keys/dev-key.pem"
+```
+
+The system config holds the state of the machine that runs m6-http: the address to listen on and the TLS certificate. It is the second argument to m6-http (see `dev.sh` below). Relative paths resolve against the site directory, and `dev.sh` issues `keys/dev.pem` and `keys/dev-key.pem` on first run. A production machine has its own system config with its own bind address and certificate paths, and `site.toml` stays the same.
 
 ## `configs/m6-html.conf`
 
@@ -201,7 +208,7 @@ trap 'kill $(jobs -p) 2>/dev/null' EXIT
 
 m6-html "$SITE" "$SITE/configs/m6-html.conf" &
 m6-file "$SITE" "$SITE/configs/m6-file.conf" &
-m6-http "$SITE" &
+m6-http "$SITE" "$SITE/configs/system-dev.toml" &
 
 echo "Running at https://localhost:8443"
 wait
