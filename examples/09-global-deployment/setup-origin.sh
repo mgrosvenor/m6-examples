@@ -53,11 +53,11 @@ ufw --force enable
 
 echo "=== TLS certificate ==="
 certbot certonly --standalone --agree-tos --email "$EMAIL" -d "$DOMAIN"
-# Auto-renewal hook — touch site.toml so m6-http reloads the new cert
+# Auto-renewal hook — touch the system config so m6-http reads the new cert
 mkdir -p /etc/letsencrypt/renewal-hooks/deploy
 cat > /etc/letsencrypt/renewal-hooks/deploy/m6-http-reload.sh << 'HOOK'
 #!/bin/bash
-touch /var/www/my-blog/site.toml
+touch /etc/m6/sydney.toml
 HOOK
 chmod +x /etc/letsencrypt/renewal-hooks/deploy/m6-http-reload.sh
 

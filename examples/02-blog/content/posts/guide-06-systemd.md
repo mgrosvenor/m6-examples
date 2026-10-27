@@ -324,8 +324,8 @@ rsync target/release/render-cms user@example.com:/var/www/my-blog/bin/
 ssh user@example.com systemctl restart render-cms
 # m6-http detects socket reappear and resumes routing — other units unaffected
 
-# TLS cert renewal — certbot handles automatically
-# m6-http detects cert file change and reloads TLS context — no restart needed
+# TLS cert renewal — certbot's deploy hook touches the system config
+# m6-http reads the new certificate on the touch and reloads TLS context — no restart needed
 certbot renew
 ```
 
