@@ -4,6 +4,7 @@
 #   h2c_bind — cleartext HTTP/2 on the WireGuard interface for cache nodes only
 #              (WireGuard provides encryption; TLS would be redundant)
 # internal_binds: the h2c listener is the backbone, so forwarded client addresses are trusted on it
+# internal_peers: the cache nodes' backbone addresses. Any other peer is refused
 
 [server]
 bind     = "0.0.0.0:443"
@@ -11,3 +12,8 @@ tls_cert = "/etc/letsencrypt/live/syd.example.com/fullchain.pem"
 tls_key  = "/etc/letsencrypt/live/syd.example.com/privkey.pem"
 h2c_bind = "10.0.0.1:80"
 internal_binds = ["10.0.0.1:80"]
+internal_peers = ["10.0.0.2", "10.0.0.3", "10.0.0.4", "10.0.0.5", "10.0.0.6"]
+
+[auth]
+backend    = "m6-auth"
+public_key = "/etc/m6/auth.pub"
