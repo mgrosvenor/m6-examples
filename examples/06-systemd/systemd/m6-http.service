@@ -10,7 +10,7 @@ Group=m6
 RuntimeDirectory=m6
 RuntimeDirectoryMode=0750
 
-ExecStart=/usr/local/bin/m6-http /var/www/my-blog
+ExecStart=/usr/local/bin/m6-http /var/www/my-blog /etc/m6/my-blog.toml
 
 Restart=on-failure
 RestartSec=2

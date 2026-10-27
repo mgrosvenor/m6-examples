@@ -136,6 +136,39 @@ jobs:
       # on `main` failed the same way. tools/build-host-tests.sh in the m6
       # repository has carried this step all along, which is why the build host
       # passed and CI never did. Kept in step with that block deliberately.
+      # A guide that teaches a reader to run m6-http has to show a command that
+      # starts. m6-http takes a site directory AND a system config, and a guide
+      # unit that passed one argument was broken for as long as nothing read it.
+      # A renewal hook that touches a system config only works when that file is
+      # the one m6-http is started with, so the path in every `touch` has to be
+      # one the same file passes to m6-http. Reads the guides and the unit files.
+      - name: Guides start m6-http with two arguments, and hooks touch its config
+        working-directory: m6-examples
+        run: |
+          python3 - <<'PY'
+          import re, subprocess, sys
+          files = subprocess.check_output(
+              ["git", "ls-files", "*.md", "*.service", ":!*posts.json"], text=True).split()
+          bad = []
+          for f in files:
+              text = open(f, encoding="utf-8").read().replace("\\\n", " ")
+              configs = set()
+              for m in re.finditer(r"^ExecStart=\S*/m6-http\s+(.*)$", text, re.M):
+                  args = m.group(1).split()
+                  if len(args) < 2:
+                      bad.append(f"{f}: m6-http ExecStart passes {len(args)} argument(s), needs 2: {m.group(0)}")
+                  else:
+                      configs.add(args[1])
+              for m in re.finditer(r"NODE_CONFIG=(\S+)", text):
+                  configs.add(m.group(1))
+                  configs.add("${NODE_CONFIG}")
+              for m in re.finditer(r"^touch (/etc/m6/\S+\.toml)\s*$", text, re.M):
+                  if m.group(1) not in configs:
+                      bad.append(f"{f}: a hook touches {m.group(1)}, which m6-http is not started with here")
+          print("\n".join(bad) if bad else f"{len(files)} files checked")
+          sys.exit(1 if bad else 0)
+          PY
+
       - name: Development certificates and auth keys
         working-directory: m6-examples
         run: |
