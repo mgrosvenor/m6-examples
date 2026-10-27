@@ -185,7 +185,7 @@ backend    = "m6-auth"
 public_key = "keys/auth.pub"
 ```
 
-`[auth]` names the key m6-http uses to verify tokens, so it sits beside the other paths that describe this node. A relative `public_key` resolves against the site directory. Declare `[auth]` in one file only. If `site.toml` carries it too, m6-http logs a warning at start.
+`[auth]` names the key m6-http uses to verify tokens, so it sits beside the other paths that describe this node. A relative `public_key` resolves against the site directory. Declare `[auth]` in one file only. If both files carry it, m6-http refuses to start and exits with status 2, reporting that `[auth]` is declared in both. If only `site.toml` carries it, m6-http starts and logs a warning.
 
 ## `render-cms/Cargo.toml`
 
