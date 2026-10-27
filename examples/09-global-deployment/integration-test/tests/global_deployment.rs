@@ -400,7 +400,7 @@ impl GlobalStack {
             .replace("/tmp/m6/m6-auth*.sock",    &auth_sock.display().to_string())
             .replace("/tmp/m6/render-cms*.sock", &cms_sock.display().to_string());
 
-        // Resolve auth public_key: patch the relative "../keys/auth.pub" to absolute.
+        // Resolve the auth public key for the origin system config as an absolute path.
         let auth_pub = site09.join("keys/auth.pub");
         let auth_pub_str = if auth_pub.exists() {
             auth_pub.display().to_string()
@@ -410,8 +410,6 @@ impl GlobalStack {
             eprintln!("SKIP: auth public key not found — run dev.sh or 07/dev.sh first");
             return None;
         };
-        let origin_site_toml = origin_site_toml
-            .replace("\"../keys/auth.pub\"", &format!("\"{}\"", auth_pub_str));
         std::fs::write(origin_sock_dir.path().join("site.toml"), &origin_site_toml).ok()?;
 
         // Symlink site subdirs so m6-http resolves template/asset paths correctly.
@@ -424,8 +422,8 @@ impl GlobalStack {
         // Origin system config: TLS + H2C.
         let origin_sys_toml = origin_sock_dir.path().join("system.toml");
         std::fs::write(&origin_sys_toml, format!(
-            "[server]\nbind     = \"{origin_tls_addr}\"\ntls_cert = \"{}\"\ntls_key  = \"{}\"\nh2c_bind = \"{origin_h2c_addr}\"\ninternal_binds = [\"{origin_h2c_addr}\"]\n",
-            cert_path.display(), key_path.display(),
+            "[server]\nbind     = \"{origin_tls_addr}\"\ntls_cert = \"{}\"\ntls_key  = \"{}\"\nh2c_bind = \"{origin_h2c_addr}\"\ninternal_binds = [\"{origin_h2c_addr}\"]\ninternal_peers = [\"127.0.0.1\"]\n\n[auth]\nbackend    = \"m6-auth\"\npublic_key = \"{}\"\n",
+            cert_path.display(), key_path.display(), auth_pub_str,
         )).ok()?;
 
         // ── Cache site dir ────────────────────────────────────────────────────

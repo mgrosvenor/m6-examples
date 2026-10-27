@@ -6,10 +6,6 @@
 name   = "My Blog"
 domain = "localhost"
 
-[auth]
-backend    = "m6-auth"
-public_key = "../keys/auth.pub"
-
 [errors]
 mode = "internal"
 

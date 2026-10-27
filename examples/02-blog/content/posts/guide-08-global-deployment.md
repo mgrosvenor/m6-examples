@@ -82,11 +82,13 @@ tls_cert = "/etc/letsencrypt/live/syd.example.com/fullchain.pem"
 tls_key  = "/etc/letsencrypt/live/syd.example.com/privkey.pem"
 h2c_bind = "10.0.0.1:80"
 internal_binds = ["10.0.0.1:80"]
+internal_peers = ["10.0.0.2", "10.0.0.3", "10.0.0.4", "10.0.0.5", "10.0.0.6"]
 ```
 
 - `bind`: public HTTPS on all interfaces; served to end users and Oceania GeoDNS traffic
 - `h2c_bind`: cleartext HTTP/2 on the WireGuard interface, only reachable from cache nodes
 - `internal_binds`: declares the h2c listener internal, so m6-http trusts the client address a cache node forwards. m6-http refuses to start with `h2c_bind` set and no `internal_binds`.
+- `internal_peers`: the addresses the cache nodes connect from. m6-http closes a connection from any other address, so trust does not depend on the firewall alone.
 
 Both listeners share the same site config and backend Unix sockets in `/run/m6/*.sock`.
 
