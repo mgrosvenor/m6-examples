@@ -154,7 +154,7 @@ journald captures everything. `journalctl -u m6-http -f` is all you need.
 m6-http <site-dir> <system-config>
 ```
 
-The system config contains only the `[server]` block — bind address and TLS paths that differ per environment. Everything else lives in `site.toml` alongside the content.
+The system config holds the state of one node: its identity (`[node]`), its bind addresses and TLS paths (`[server]`), its token verify key (`[auth]`) and the access keys for its metrics endpoints (`metrics_require`, `metrics_peers` and `metrics_token_file` under `[health]`). `site.toml` holds the settings every node shares, such as routes, backends, site identity and log level, and it lives alongside the content. m6-http logs a warning at start for each node key it finds in `site.toml`, naming the key and the file it belongs in.
 
 ```bash
 # Development
