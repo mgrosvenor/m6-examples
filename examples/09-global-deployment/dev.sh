@@ -59,9 +59,10 @@ if [ ! -f "$SITE09/certs/local.pem" ]; then
     fi
 fi
 
-# ── Expose 07's auth public key for site-origin/site.toml ────────────────────
-# site-origin/site.toml uses public_key = "../keys/auth.pub"
-# which resolves to $SITE09/keys/auth.pub
+# ── Expose 07's auth public key for configs/local/sydney.toml ────────────────
+# configs/local/sydney.toml sets public_key = "../keys/auth.pub". A relative
+# system-config public_key resolves against the site directory (site-origin),
+# so it points at $SITE09/keys/auth.pub
 mkdir -p "$SITE09/keys"
 if [ ! -f "$SITE09/keys/auth.pub" ]; then
     cp "$SITE07/keys/auth.pub" "$SITE09/keys/auth.pub"
