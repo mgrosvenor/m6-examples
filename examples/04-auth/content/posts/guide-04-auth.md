@@ -67,13 +67,19 @@ public_key  = "keys/auth.pub"
 
 m6-auth manages its own SQLite database at `storage.path`. The access token is short-lived (15 min); the refresh token is long-lived (30 days).
 
-## New entries in `site.toml`
+## New entries in the system config
+
+`[auth]` names the key m6-http uses to verify tokens, which is a credential path, so it belongs in the system config (`configs/system-dev.toml`) and not in `site.toml`. A relative `public_key` resolves against the site directory.
 
 ```toml
 [auth]
 backend    = "m6-auth"
 public_key = "keys/auth.pub"
+```
 
+## New entries in `site.toml`
+
+```toml
 [[backend]]
 name    = "m6-auth"
 sockets = "/run/m6/m6-auth-*.sock"

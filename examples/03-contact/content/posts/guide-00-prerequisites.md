@@ -54,19 +54,16 @@ mkcert -install
 mkcert localhost 127.0.0.1
 ```
 
-This creates `localhost.pem` and `localhost-key.pem` in the current directory. The examples reference these from `../../localhost.pem` — run the command from the `examples/` directory and it'll be in the right place.
+You do not need to run `mkcert localhost` yourself. Each example's `dev.sh` script issues its own certificate on first run into the example's `keys/` directory as `keys/dev.pem` and `keys/dev-key.pem`, and the example's `configs/system-dev.toml` points at them. The `mkcert -install` step above is the only one you do by hand. If `mkcert` is missing, `dev.sh` falls back to a self-signed certificate from `openssl` and your browser will warn about it.
 
 ## Clone the examples
 
 ```bash
 git clone https://github.com/m6/m6-examples
 cd m6-examples
-
-# Generate TLS certs in the right location
-mkcert localhost 127.0.0.1
 ```
 
-Now you have all five examples ready to run. Each is self-contained: its own `site.toml`, its own configs, its own templates and data. They share only the TLS certs in the `examples/` root.
+Now you have all five examples ready to run. Each is self-contained: its own `site.toml`, its own configs, its own templates and data. Each issues its own TLS certificate under its own `keys/` directory.
 
 ## How the examples are structured
 
@@ -89,8 +86,6 @@ Each example builds on the previous one. The directory names reflect the progres
 
 ```
 examples/
-├── localhost.pem
-├── localhost-key.pem
 ├── 01-static/
 ├── 02-blog/
 ├── 03-contact/

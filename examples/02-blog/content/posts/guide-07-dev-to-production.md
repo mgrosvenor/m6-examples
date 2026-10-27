@@ -1,7 +1,7 @@
 +++
 title   = "Guide 07: Dev to Production"
 date    = "2025-01-01"
-summary = "The same site.toml in both environments. The system config provides the three keys that differ. A deploy.sh script and a common mistakes checklist."
+summary = "The same site.toml in both environments. The system config holds the node state that differs. A deploy.sh script and a common mistakes checklist."
 tags    = ["guide", "tutorial", "deployment", "production"]
 cover   = "https://picsum.photos/seed/guide07/1200/500"
 +++
@@ -19,7 +19,7 @@ cover   = "https://picsum.photos/seed/guide07/1200/500"
 
 ---
 
-`examples/07-dev-to-production/` is the complete workflow for taking a site from local development to a production server. The same site directory runs in both environments — the system config provides the three keys that differ.
+`examples/07-dev-to-production/` is the complete workflow for taking a site from local development to a production server. The same site directory runs in both environments — the system config holds the node state that differs.
 
 ## The split
 
@@ -29,16 +29,6 @@ cover   = "https://picsum.photos/seed/guide07/1200/500"
 [site]
 name   = "My Blog"
 domain = "example.com"
-
-[server]
-# Development defaults — system config overrides these in production
-bind     = "127.0.0.1:8443"
-tls_cert = "../../localhost.pem"
-tls_key  = "../../localhost-key.pem"
-
-[auth]
-backend    = "m6-auth"
-public_key = "keys/auth.pub"
 
 [log]
 level  = "info"
@@ -54,27 +44,40 @@ sockets = "/run/m6/m6-html-*.sock"
 # ... full backend and route table as in example 05
 ```
 
+`site.toml` has no bind address, no certificate paths and no `[auth]`. Those describe one node, so they live in the system config. m6-http logs a warning at start for each node key it finds in `site.toml`.
+
 **`configs/system-dev.toml` — development system config, version controlled:**
 
 ```toml
-# The three keys that differ in development.
+# The node state in development.
 # Committed to the repo — contains no secrets.
 [server]
 bind     = "127.0.0.1:8443"
-tls_cert = "../../localhost.pem"
-tls_key  = "../../localhost-key.pem"
+tls_cert = "keys/dev.pem"
+tls_key  = "keys/dev-key.pem"
+
+[auth]
+backend    = "m6-auth"
+public_key = "keys/auth.pub"
 ```
 
 **`/etc/m6/my-blog.toml` — production system config, on the server only:**
 
 ```toml
+[node]
+name = "web-1"
+
 [server]
 bind     = "0.0.0.0:443"
 tls_cert = "/etc/letsencrypt/live/example.com/fullchain.pem"
 tls_key  = "/etc/letsencrypt/live/example.com/privkey.pem"
+
+[auth]
+backend    = "m6-auth"
+public_key = "/etc/m6/auth.pub"
 ```
 
-Only `[server]`. Nothing else. The system config wins on `[server]` keys — everything else comes from `site.toml` unchanged.
+The system config holds the state of one node: its identity (`[node]`), its binds and TLS paths (`[server]`), its token verify key (`[auth]`) and its metrics access keys (`metrics_require`, `metrics_peers` and `metrics_token_file` under `[health]`). `[auth]` goes in one file only, and declaring it in both files is a startup error. Its `[server]` and `[health]` keys win over `site.toml`. Everything else comes from `site.toml` unchanged.
 
 **`configs/render-contact.conf` — version controlled, uses local mock values:**
 
@@ -133,10 +136,17 @@ chmod 600 /etc/m6/auth.pem
 
 # Create production system config
 cat > /etc/m6/my-blog.toml << 'TOML'
+[node]
+name = "web-1"
+
 [server]
 bind     = "0.0.0.0:443"
 tls_cert = "/etc/letsencrypt/live/example.com/fullchain.pem"
 tls_key  = "/etc/letsencrypt/live/example.com/privkey.pem"
+
+[auth]
+backend    = "m6-auth"
+public_key = "/etc/m6/auth.pub"
 TOML
 chown root:m6 /etc/m6/my-blog.toml
 chmod 640 /etc/m6/my-blog.toml
@@ -218,14 +228,15 @@ For template and config changes: `./deploy.sh` — m6-http picks up the change a
 |---|---|---|
 | `m6-http` invocation | `m6-http $SITE $SITE/configs/system-dev.toml` | `m6-http /var/www/my-blog /etc/m6/my-blog.toml` |
 | `[server] bind` | `127.0.0.1:8443` | `0.0.0.0:443` |
-| TLS cert | `localhost.pem` (mkcert) | `/etc/letsencrypt/...` (certbot) |
+| TLS cert | `keys/dev.pem` (issued by `dev.sh`) | `/etc/letsencrypt/...` (certbot) |
 | SMTP | `localhost:1025` (mock) | `smtp.postmarkapp.com:587` |
 | SMTP credentials | inline in renderer config | `/etc/m6/contact-secrets.toml` via `secrets_file` |
+| `[auth] public_key` | `keys/auth.pub` | `/etc/m6/auth.pub` |
 | System config | `configs/system-dev.toml` (in repo) | `/etc/m6/my-blog.toml` (on server) |
 | Process manager | `dev.sh` | systemd |
 | Logs | terminal stdout | journald |
 
-Routes, templates, backends, auth config, and log settings are identical. The same `site.toml` runs in both environments.
+Routes, templates, backends and log settings are identical. The same `site.toml` runs in both environments.
 
 <pre class="mermaid">
 flowchart LR
