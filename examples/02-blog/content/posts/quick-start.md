@@ -23,7 +23,7 @@ cargo install m6-http m6-html m6-file
 mkcert -install && mkcert localhost 127.0.0.1
 ```
 
-The `mkcert` command creates `localhost.pem` and `localhost-key.pem` in the current directory. Keep them — you'll reference them from your system config.
+The `mkcert` command writes `localhost+1.pem` and `localhost+1-key.pem` in the current directory. The examples do not read those two files. Each example's `dev.sh` makes its own `keys/dev.pem` and `keys/dev-key.pem`, and the system config refers to those.
 
 ## Clone the examples
 

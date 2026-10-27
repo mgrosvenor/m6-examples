@@ -67,10 +67,6 @@ cargo build --release -p render-cms
 name   = "My Blog"
 domain = "localhost"
 
-[auth]
-backend    = "m6-auth"
-public_key = "keys/auth.pub"
-
 [[backend]]
 name    = "m6-html"
 sockets = "/run/m6/m6-html-*.sock"
@@ -173,6 +169,23 @@ require = "group:editors"
 ```
 
 `[[route_group]]` with `content/posts/*.json` handles routing for individual posts. New post files become routable when m6-http reloads after `site.toml` is touched on publish.
+
+`site.toml` has no `[auth]` because the key it names belongs to one node. It goes in the system config.
+
+## `configs/system-dev.toml`
+
+```toml
+[server]
+bind     = "127.0.0.1:8443"
+tls_cert = "keys/dev.pem"
+tls_key  = "keys/dev-key.pem"
+
+[auth]
+backend    = "m6-auth"
+public_key = "keys/auth.pub"
+```
+
+`[auth]` names the key m6-http uses to verify tokens, so it sits beside the other paths that describe this node. A relative `public_key` resolves against the site directory. Declare `[auth]` in one file only. If both files carry it, m6-http refuses to start and exits with status 2, reporting that `[auth]` is declared in both. If only `site.toml` carries it, m6-http starts and logs a warning.
 
 ## `render-cms/Cargo.toml`
 

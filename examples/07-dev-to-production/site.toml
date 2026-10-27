@@ -13,10 +13,6 @@ domain = "localhost"
 # looks exactly like a missing route and is not one.
 allowed_methods = ["GET", "HEAD", "POST", "PATCH"]
 
-[auth]
-backend    = "m6-auth"
-public_key = "keys/auth.pub"
-
 [errors]
 mode             = "internal"
 verbose_fallback = true
