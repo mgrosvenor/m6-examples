@@ -14,8 +14,8 @@
 //! names the command that fixes it.
 //!
 //! The site's auth database must exist with an `admin` user in the `editors`
-//! group (created by `./dev.sh` or `./setup.sh`). The auth-dependent sections
-//! fail if the database is absent.
+//! group (created by `./dev.sh` or `./setup.sh`). The test fails with
+//! "auth database not found. Run ./dev.sh first" if it is absent.
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -383,25 +383,30 @@ fn wait_for_socket(path: &Path, timeout: Duration) -> bool {
 }
 
 impl ServerStack {
-    /// Start the full server stack. Panics with the command that fixes a missing
-    /// prerequisite. Returns None when a required binary or temporary file is
-    /// unavailable, which the caller turns into a failure.
-    fn start() -> Option<Self> {
+    /// Start the full server stack. Panics, naming the command that fixes it,
+    /// when a binary, certificate, auth database or socket is missing or a
+    /// service does not come up. Children already started are killed on the
+    /// way out, because they live in the returned stack's `Drop`.
+    fn start() -> Self {
         let site = site_dir();
 
         // Require all m6 binaries.
-        let m6_http   = m6_bin("m6-http")?;
-        let m6_html   = m6_bin("m6-html")?;
-        let m6_file   = m6_bin("m6-file")?;
-        let m6_auth   = m6_bin("m6-auth-server")?;
+        let m6_http   = m6_bin("m6-http").expect("m6-http not found in ../m6/target/release or PATH. Run `cargo build --release` in the m6 workspace");
+        let m6_html   = m6_bin("m6-html").expect("m6-html not found in ../m6/target/release or PATH. Run `cargo build --release` in the m6 workspace");
+        let m6_file   = m6_bin("m6-file").expect("m6-file not found in ../m6/target/release or PATH. Run `cargo build --release` in the m6 workspace");
+        let m6_auth   = m6_bin("m6-auth-server").expect("m6-auth-server not found in ../m6/target/release or PATH. Run `cargo build --release` in the m6 workspace");
         let render_cms = render_cms_bin();
-        if !render_cms.exists() { return None; }
+        assert!(
+            render_cms.exists(),
+            "render-cms binary not found at {}. Run `cargo build -p render-cms`",
+            render_cms.display()
+        );
 
         // Use a unique port per process ID to avoid collisions with dev server.
         let base_port: u16 = 20000 + (std::process::id() as u16 % 10000);
         let tls_addr = format!("127.0.0.1:{base_port}");
 
-        let sock_dir = tempfile::tempdir().ok()?;
+        let sock_dir = tempfile::tempdir().expect("cannot create a temporary directory. Check that the temp dir is writable");
         let html_sock = sock_dir.path().join("m6-html.sock");
         let file_sock = sock_dir.path().join("m6-file.sock");
         let auth_sock = sock_dir.path().join("m6-auth.sock");
@@ -419,65 +424,72 @@ impl ServerStack {
             "[server]\nbind     = \"{tls_addr}\"\ntls_cert = \"{}\"\ntls_key  = \"{}\"\n\n\
              [auth]\nbackend    = \"m6-auth\"\npublic_key = \"keys/auth.pub\"\n",
             tls_cert.display(), tls_key.display(),
-        )).ok()?;
+        )).expect("cannot write system.toml in the temporary directory. Check that the temp dir is writable");
 
         // Write a site.toml that points sockets at the temp sock_dir.
         let site_toml = sock_dir.path().join("site.toml");
-        std::fs::copy(site.join("site.toml"), &site_toml).ok()?;
+        std::fs::copy(site.join("site.toml"), &site_toml)
+            .expect("cannot copy site.toml. Check examples/05-cms/site.toml exists");
         // Patch socket glob paths in the copy.
-        let original = std::fs::read_to_string(&site_toml).ok()?;
+        let original = std::fs::read_to_string(&site_toml)
+            .expect("cannot read the copied site.toml. Check that the temp dir is writable");
         let patched = original
             .replace("/tmp/m6/m6-html*.sock",    &html_sock.display().to_string())
             .replace("/tmp/m6/m6-file*.sock",    &file_sock.display().to_string())
             .replace("/tmp/m6/m6-auth*.sock",    &auth_sock.display().to_string())
             .replace("/tmp/m6/render-cms*.sock", &cms_sock.display().to_string());
-        std::fs::write(&site_toml, &patched).ok()?;
+        std::fs::write(&site_toml, &patched)
+            .expect("cannot write the patched site.toml. Check that the temp dir is writable");
 
-        // Check the auth DB exists (created by dev.sh / setup.sh).
-        let has_auth = auth_db_exists();
-        if !has_auth {
-            eprintln!("NOTE: auth database absent. The auth sections will fail. Run ./dev.sh first");
+        // The auth DB is created by dev.sh / setup.sh.
+        if !auth_db_exists() {
+            panic!("auth database not found. Run ./dev.sh first");
         }
 
-        let mut processes = Vec::new();
+        // The stack owns its children from the first spawn, so a panic below
+        // kills what was already started instead of leaking it.
+        let mut stack = ServerStack {
+            addr: tls_addr.clone(),
+            _sock_dir: sock_dir,
+            processes: Vec::new(),
+        };
+        let sock_path = stack._sock_dir.path().to_path_buf();
 
         // m6-html
-        processes.push(Command::new(&m6_html)
+        stack.processes.push(Command::new(&m6_html)
             .arg(&site)
             .arg(site.join("configs/m6-html.conf"))
             .arg("--log-level").arg("warn")
             .env("M6_SOCKET_OVERRIDE", &html_sock)
             .stdout(Stdio::null()).stderr(Stdio::null())
-            .spawn().ok()?);
+            .spawn().expect("cannot start m6-html. Run `cargo build --release` in the m6 workspace and `cargo build -p render-cms`"));
 
         // m6-file
-        processes.push(Command::new(&m6_file)
+        stack.processes.push(Command::new(&m6_file)
             .arg(&site)
             .arg(site.join("configs/m6-file.conf"))
             .arg("--log-level").arg("warn")
             .env("M6_SOCKET_OVERRIDE", &file_sock)
             .stdout(Stdio::null()).stderr(Stdio::null())
-            .spawn().ok()?);
+            .spawn().expect("cannot start m6-file. Run `cargo build --release` in the m6 workspace and `cargo build -p render-cms`"));
 
-        // m6-auth-server (only if auth DB is present)
-        if has_auth {
-            processes.push(Command::new(&m6_auth)
-                .arg(&site)
-                .arg(site.join("configs/m6-auth.conf"))
-                .arg("--log-level").arg("warn")
-                .env("M6_SOCKET_OVERRIDE", &auth_sock)
-                .stdout(Stdio::null()).stderr(Stdio::null())
-                .spawn().ok()?);
-        }
+        // m6-auth-server
+        stack.processes.push(Command::new(&m6_auth)
+            .arg(&site)
+            .arg(site.join("configs/m6-auth.conf"))
+            .arg("--log-level").arg("warn")
+            .env("M6_SOCKET_OVERRIDE", &auth_sock)
+            .stdout(Stdio::null()).stderr(Stdio::null())
+            .spawn().expect("cannot start m6-auth-server. Run `cargo build --release` in the m6 workspace and `cargo build -p render-cms`"));
 
         // render-cms
-        processes.push(Command::new(&render_cms)
+        stack.processes.push(Command::new(&render_cms)
             .arg(&site)
             .arg(site.join("configs/render-cms.conf"))
             .arg("--log-level").arg("warn")
             .env("M6_SOCKET_OVERRIDE", &cms_sock)
             .stdout(Stdio::null()).stderr(Stdio::null())
-            .spawn().ok()?);
+            .spawn().expect("cannot start render-cms. Run `cargo build --release` in the m6 workspace and `cargo build -p render-cms`"));
 
         // Wait for all backend sockets.
         let timeout = Duration::from_secs(15);
@@ -489,7 +501,7 @@ impl ServerStack {
                 );
             }
         }
-        if has_auth && !wait_for_socket(&auth_sock, timeout) {
+        if !wait_for_socket(&auth_sock, timeout) {
             panic!("auth socket did not appear. Run ./dev.sh first");
         }
 
@@ -497,29 +509,25 @@ impl ServerStack {
         // (keys/, templates/, data/, assets/, configs/, content/) against sock_dir.
         for subdir in &["templates", "data", "assets", "configs", "keys", "content"] {
             let src = site.join(subdir);
-            let dst = sock_dir.path().join(subdir);
+            let dst = sock_path.join(subdir);
             if src.exists() {
                 std::os::unix::fs::symlink(&src, &dst).ok();
             }
         }
 
         // m6-http — pass sock_dir as site_dir; it has site.toml + symlinked subdirs
-        processes.push(Command::new(&m6_http)
-            .arg(sock_dir.path())
+        stack.processes.push(Command::new(&m6_http)
+            .arg(&sock_path)
             .arg(&sys_toml)
             .arg("--log-level").arg("warn")
             .stdout(Stdio::null()).stderr(Stdio::null())
-            .spawn().ok()?);
+            .spawn().expect("cannot start m6-http. Run `cargo build --release` in the m6 workspace and `cargo build -p render-cms`"));
 
         if !wait_for_tcp(&tls_addr, Duration::from_secs(15)) {
             panic!("m6-http did not become ready on {tls_addr}. Run ./dev.sh first");
         }
 
-        Some(ServerStack { addr: tls_addr, _sock_dir: sock_dir, processes })
-    }
-
-    fn has_auth(&self) -> bool {
-        auth_db_exists()
+        stack
     }
 }
 
@@ -560,9 +568,7 @@ macro_rules! check_status {
 
 #[test]
 fn blog_site_end_to_end() {
-    let stack = ServerStack::start().unwrap_or_else(|| {
-        panic!("blog_site_end_to_end: prerequisites not met. Build the m6 release binaries with `cargo build --release` in the m6 workspace, then run ./dev.sh")
-    });
+    let stack = ServerStack::start();
 
     let addr = &stack.addr;
     let tls  = make_tls_config();
@@ -649,9 +655,6 @@ fn blog_site_end_to_end() {
 
     eprintln!("\n── §5 Auth endpoints ──");
 
-    let auth_available = stack.has_auth();
-    check_eq!("auth database exists (run ./dev.sh first)", auth_available, true);
-
     // POST /auth/login → 302 redirect + Set-Cookie
     let r = post(addr, "/auth/login", "application/x-www-form-urlencoded",
         "username=admin&password=admin", "", Arc::clone(&tls));
@@ -669,8 +672,6 @@ fn blog_site_end_to_end() {
     let r = get_with_cookie_str(addr, "/cms", "", Arc::clone(&tls));
     check_status!("GET /cms without auth → 401/302/403", r.status, 401u16, 302u16, 403u16);
 
-    check_eq!("§6 has an auth cookie", !cookie_str.is_empty(), true);
-
     let r = get_with_cookie_str(addr, "/cms", &cookie_str, Arc::clone(&tls));
     check_eq!("GET /cms with auth → 200", r.status, 200);
     check_contains!("GET /cms → shows dashboard", r.body, "draft");
@@ -682,8 +683,6 @@ fn blog_site_end_to_end() {
     // ── §7 CMS API: draft lifecycle ───────────────────────────────────────
 
     eprintln!("\n── §7 CMS API: draft → publish → unpublish lifecycle ──");
-
-    check_eq!("§7 has an auth cookie", !cookie_str.is_empty(), true);
 
     let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
@@ -734,8 +733,6 @@ fn blog_site_end_to_end() {
     // ── §8 Auth: logout ───────────────────────────────────────────────────
 
     eprintln!("\n── §8 Auth logout ──");
-
-    check_eq!("§8 has an auth cookie", !cookie_str.is_empty(), true);
 
     let r = post(addr, "/auth/logout", "application/x-www-form-urlencoded",
         "", &cookie_str, Arc::clone(&tls));
