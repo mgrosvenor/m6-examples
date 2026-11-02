@@ -44,6 +44,11 @@ systemctl enable --now wg-quick@wg0
 
 echo "=== Firewall ==="
 ufw allow 22/tcp
+# The backbone: allow the h2c address on the WireGuard interface only.
+ufw allow in on wg0 to 10.0.0.1 port 80 proto tcp
+# Deny that address on every other interface so h2c stays off the public network.
+ufw deny to 10.0.0.1 port 80 proto tcp
+# Certbot standalone answers the certificate HTTP-01 challenge on public port 80 at issue and renewal.
 ufw allow 80/tcp
 ufw allow 443/tcp
 ufw allow 443/udp    # H3/QUIC
