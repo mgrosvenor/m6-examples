@@ -1,5 +1,6 @@
 #!/bin/bash
 # dev.sh — start all services for example 11-admin-dashboard.
+# M6_PORT=8444
 set -e
 
 SITE="$(cd "$(dirname "$0")" && pwd)"
