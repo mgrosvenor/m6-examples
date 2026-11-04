@@ -38,6 +38,7 @@ systemctl enable --now wg-quick@wg0
 
 echo "=== Firewall ==="
 ufw allow 22/tcp
+# Port 80/tcp is for the certbot certificate challenge only, nothing else listens there.
 ufw allow 80/tcp
 ufw allow 443/tcp
 ufw allow 443/udp

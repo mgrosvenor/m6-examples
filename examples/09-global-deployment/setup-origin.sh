@@ -44,6 +44,13 @@ systemctl enable --now wg-quick@wg0
 
 echo "=== Firewall ==="
 ufw allow 22/tcp
+# The backbone: h2c on the WireGuard address is reachable through wg0 only.
+# `insert 1` puts these rules first even on an origin set up by an earlier
+# version of this script, whose `allow 80/tcp` would otherwise match first.
+# The deny goes in first so the wg0 allow lands above it.
+ufw insert 1 deny to 10.0.0.1 port 80 proto tcp
+ufw insert 1 allow in on wg0 to 10.0.0.1 port 80 proto tcp
+# Certbot standalone answers the certificate HTTP-01 challenge on public port 80 at issue and renewal.
 ufw allow 80/tcp
 ufw allow 443/tcp
 ufw allow 443/udp    # H3/QUIC
