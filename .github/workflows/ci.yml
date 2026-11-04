@@ -110,10 +110,7 @@ jobs:
       - name: Unit tests
         working-directory: m6-examples
         run: |
-          # Example 05's end-to-end test needs the certificates and auth
-          # database that dev.sh creates, and fails without them (issue #9),
-          # so it runs below once the stack is up.
-          cargo test --workspace -- --skip blog_site_end_to_end > full.log 2>&1 || true
+          cargo test --workspace > full.log 2>&1 || true
           grep -E '^test result:' full.log || true
           if grep -q '^failures:' full.log; then
             sed -n '/^failures:/,$p' full.log | head -60
@@ -248,7 +245,6 @@ jobs:
             exit 1
           fi
           ./test.sh
-          (cd "$GITHUB_WORKSPACE/m6-examples" && cargo test -p render-cms --test integration)
 
       - name: Stop the stack
         if: always()
