@@ -83,7 +83,7 @@ done
 # ── m6-http ───────────────────────────────────────────────────────────────────
 # Truncate the log file so render-admin always reads current-session data.
 : > /tmp/m6/m6-http-admin.log
-m6-http "$SITE" "$SITE/site.toml" >> /tmp/m6/m6-http-admin.log 2>&1 &
+m6-http "$SITE" "$SITE/configs/system-dev.toml" >> /tmp/m6/m6-http-admin.log 2>&1 &
 HTTP_PID=$!
 
 echo ""

@@ -86,7 +86,7 @@ for i in $(seq 1 30); do
     sleep 0.2
 done
 
-m6-http "$SITE" "$SITE/site.toml" &
+m6-http "$SITE" "$SITE/configs/system-dev.toml" &
 HTTP_PID=$!
 
 echo "Running at https://localhost:8443"

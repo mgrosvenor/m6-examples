@@ -6,9 +6,6 @@ name   = "m6 Admin Dashboard"
 domain = "localhost"
 
 [server]
-bind     = "127.0.0.1:8444"
-tls_cert = "keys/dev.pem"
-tls_key  = "keys/dev-key.pem"
 # m6-http validates the request method before routing, cache lookup or backend
 # dispatch, and the default is GET, HEAD, POST only: anything else is answered
 # 405 with an `Allow` header and never reaches a backend.
@@ -18,10 +15,6 @@ tls_key  = "keys/dev-key.pem"
 # handler behind it was registered and working, which looks exactly like a
 # missing route and is not one.
 allowed_methods = ["GET", "HEAD", "POST", "PUT"]
-
-[auth]
-backend    = "auth"
-public_key = "keys/auth.pub"
 
 [errors]
 mode             = "internal"
