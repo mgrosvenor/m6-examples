@@ -69,6 +69,10 @@ check_contains "/api/admin/system returns disks" '"disks"' "$BODY"
 echo "-- Bench targets --"
 BODY=$(curl -sk -H "Authorization: Bearer $TOKEN" "$BASE/api/admin/bench")
 check_contains "/api/admin/bench returns targets" '"targets"' "$BODY"
+check_contains "/api/admin/bench lists the system config's port" '127.0.0.1:8444' "$BODY"
+
+BODY=$(curl -sk -H "Authorization: Bearer $TOKEN" "$BASE/api/admin/backends")
+check_contains "/api/admin/backends reports the system config's bind" '"bind":"127.0.0.1:8444"' "$BODY"
 
 # ── /api/admin/logs ───────────────────────────────────────────────────────────
 echo "-- Logs --"

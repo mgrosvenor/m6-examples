@@ -39,29 +39,17 @@ fn now_secs() -> u64 {
 /// Derive bench targets from the site.toml bind address.
 /// Returns JSON blob: { "targets": [ { "id": "h1", "label": "HTTP/1.1 127.0.0.1:8080",
 ///                                     "addr": "127.0.0.1:8080", "proto": "h1" }, ... ] }
-pub fn targets_blob(site_toml: &Path) -> Value {
-    let targets = discover_targets(site_toml);
+pub fn targets_blob(system_toml: &Path) -> Value {
+    let targets = discover_targets(system_toml);
     json!({ "targets": targets })
 }
 
-pub fn discover_targets(site_toml: &Path) -> Vec<Value> {
-    let text = match std::fs::read_to_string(site_toml) {
-        Ok(t) => t,
-        Err(_) => return vec![],
+/// Bench targets on the port m6-http listens on; none when the system config names no bind.
+pub fn discover_targets(system_toml: &Path) -> Vec<Value> {
+    let Some(bind) = crate::server_bind(system_toml) else {
+        return vec![];
     };
-    let parsed: toml::Value = match toml::from_str(&text) {
-        Ok(v) => v,
-        Err(_) => return vec![],
-    };
-
-    let bind = parsed
-        .get("server")
-        .and_then(|s| s.get("bind"))
-        .and_then(|b| b.as_str())
-        .unwrap_or("127.0.0.1:8443");
-
-    // Extract port from "host:port", default to 8443
-    let port = bind.rsplit(':').next().unwrap_or("8443");
+    let port = bind.rsplit(':').next().unwrap_or(&bind);
     let addr = format!("127.0.0.1:{port}");
 
     vec![

@@ -12,8 +12,10 @@ pub struct Global {
     log_file:        PathBuf,
     /// Number of "request complete" log entries to sample for route stats.
     routes_sample:   usize,
-    /// site.toml for the managed site (for config read/write/touch and bench targets).
+    /// site.toml for the managed site (for config read/write/touch and the topology view).
     site_toml: PathBuf,
+    /// System config m6-http starts with; the source of the bind address.
+    system_toml: PathBuf,
     /// Number of perf history entries to return.
     perf_history: usize,
     /// Number of log lines to return by default.
@@ -63,6 +65,7 @@ fn init_global(ctx: &AppContext) -> m6_core::Result<Global> {
 
     let log_file = PathBuf::from(get("log_file", "/tmp/m6/m6-http.log"));
     let site_toml = resolve(get("site_toml", "site.toml"));
+    let system_toml = resolve(get("system_toml", "configs/system-dev.toml"));
     let bench_bin = PathBuf::from(get("bench_bin", "m6-bench"));
 
     // Parse services: array of { name, pid_file } objects.
@@ -84,6 +87,7 @@ fn init_global(ctx: &AppContext) -> m6_core::Result<Global> {
         log_file,
         routes_sample: get_usize("routes_sample", 10_000),
         site_toml,
+        system_toml,
         perf_history: get_usize("perf_history", 60),
         log_tail_default: get_usize("log_tail_default", 100),
         bench_bin,
@@ -119,7 +123,7 @@ fn handle_system(_req: &Request, _g: &Global) -> m6_core::Result<Response> {
 }
 
 fn handle_bench_targets(_req: &Request, g: &Global) -> m6_core::Result<Response> {
-    Ok(Response::json(bench::targets_blob(&g.site_toml)))
+    Ok(Response::json(bench::targets_blob(&g.system_toml)))
 }
 
 fn handle_bench_start(req: &Request, g: &Global) -> m6_core::Result<Response> {
@@ -197,7 +201,12 @@ fn handle_restart(req: &Request, g: &Global) -> m6_core::Result<Response> {
 }
 
 fn handle_backends_summary(_req: &Request, g: &Global) -> m6_core::Result<Response> {
-    Ok(Response::json(perf::backends_summary_blob(&g.log_file, &g.site_toml, g.routes_sample)))
+    Ok(Response::json(perf::backends_summary_blob(
+        &g.log_file,
+        &g.site_toml,
+        &g.system_toml,
+        g.routes_sample,
+    )))
 }
 
 fn handle_backend_sample(req: &Request, g: &Global) -> m6_core::Result<Response> {

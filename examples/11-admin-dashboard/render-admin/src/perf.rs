@@ -63,9 +63,15 @@ pub fn routes_blob(log_path: &Path, sample: usize) -> Value {
 
 /// Summary of all backends — used for the topology diagram.
 /// Returns site config metadata plus per-backend stats from the last `sample_n` requests.
-pub fn backends_summary_blob(log_path: &Path, site_toml: &Path, sample_n: usize) -> Value {
+pub fn backends_summary_blob(
+    log_path: &Path,
+    site_toml: &Path,
+    system_toml: &Path,
+    sample_n: usize,
+) -> Value {
     // ── Parse site.toml for topology metadata ──────────────────────────────
-    let (site_name, bind, backend_route_map) = parse_site_topology(site_toml);
+    let (site_name, backend_route_map) = parse_site_topology(site_toml);
+    let bind = crate::server_bind(system_toml);
 
     // Build reverse map: path → backend name
     let mut path_to_backend: HashMap<String, String> = HashMap::new();
@@ -131,13 +137,9 @@ pub fn backends_summary_blob(log_path: &Path, site_toml: &Path, sample_n: usize)
     })
 }
 
-/// Parse site.toml and return (site_name, bind_addr, backend→[paths] map).
-fn parse_site_topology(site_toml: &Path) -> (String, String, HashMap<String, Vec<String>>) {
-    let empty = (
-        "m6-http".to_string(),
-        "unknown".to_string(),
-        HashMap::new(),
-    );
+/// Parse site.toml and return (site_name, backend→[paths] map).
+fn parse_site_topology(site_toml: &Path) -> (String, HashMap<String, Vec<String>>) {
+    let empty = ("m6-http".to_string(), HashMap::new());
     let text = match fs::read_to_string(site_toml) {
         Ok(t) => t,
         Err(_) => return empty,
@@ -151,12 +153,6 @@ fn parse_site_topology(site_toml: &Path) -> (String, String, HashMap<String, Vec
         .and_then(|s| s.get("name"))
         .and_then(|n| n.as_str())
         .unwrap_or("m6-http")
-        .to_string();
-
-    let bind = parsed.get("server")
-        .and_then(|s| s.get("bind"))
-        .and_then(|b| b.as_str())
-        .unwrap_or("unknown")
         .to_string();
 
     let mut map: HashMap<String, Vec<String>> = HashMap::new();
@@ -181,7 +177,7 @@ fn parse_site_topology(site_toml: &Path) -> (String, String, HashMap<String, Vec
         }
     }
 
-    (site_name, bind, map)
+    (site_name, map)
 }
 
 /// Aggregate stats for m6-http itself (all paths, no backend filter).
@@ -199,7 +195,7 @@ pub fn backend_stats_blob(
     backend_name: &str,
     limit: usize,
 ) -> Value {
-    let (_, _, backend_paths) = parse_site_topology(site_toml);
+    let (_, backend_paths) = parse_site_topology(site_toml);
     let paths = match backend_paths.get(backend_name) {
         Some(p) => p.clone(),
         None => return json!({ "error": format!("unknown backend: {backend_name}") }),
