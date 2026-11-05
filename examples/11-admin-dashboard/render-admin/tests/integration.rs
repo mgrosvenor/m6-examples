@@ -307,27 +307,61 @@ mod system_tests {
     }
 }
 
+// ── backends view ─────────────────────────────────────────────────────────────
+
+mod backends_tests {
+    use super::*;
+    use render_admin::perf::backends_summary_blob;
+
+    // The bind is only in the system config, as since m6 #243; site.toml has no [server].
+    #[test]
+    fn backends_reports_the_bind_from_the_system_config() {
+        let dir = tmp();
+        let site = dir.path().join("site.toml");
+        fs::write(&site, "[site]\nname = \"s\"\n\n[[backend]]\nname = \"api\"\n").unwrap();
+        let system = dir.path().join("system.toml");
+        fs::write(&system, "[server]\nbind = \"192.0.2.10:8444\"\n").unwrap();
+        let log = dir.path().join("empty.log");
+        fs::write(&log, "").unwrap();
+
+        let v = backends_summary_blob(&log, &site, &system, 100);
+        assert_eq!(v["bind"], "192.0.2.10:8444");
+        assert_eq!(v["backends"][0]["name"], "api");
+    }
+
+    #[test]
+    fn backends_bind_is_null_without_a_system_config() {
+        let dir = tmp();
+        let site = dir.path().join("site.toml");
+        fs::write(&site, "[site]\nname = \"s\"\n").unwrap();
+        let log = dir.path().join("empty.log");
+        fs::write(&log, "").unwrap();
+
+        let v = backends_summary_blob(&log, &site, &dir.path().join("none.toml"), 100);
+        assert!(v["bind"].is_null());
+    }
+}
+
 // ── bench ─────────────────────────────────────────────────────────────────────
 
 mod bench_tests {
     use super::*;
     use render_admin::bench::{discover_targets, new_job_store, poll_job, start_bench};
 
-    fn write_site_toml(dir: &TempDir, bind: &str) -> std::path::PathBuf {
-        let p = dir.path().join("site.toml");
+    fn write_system_toml(dir: &TempDir, bind: &str) -> std::path::PathBuf {
+        let p = dir.path().join("system.toml");
         fs::write(&p, format!("[server]\nbind = \"{bind}\"\n")).unwrap();
         p
     }
 
     #[test]
-    fn targets_discovered_from_site_toml() {
+    fn targets_discovered_from_system_config_bind() {
         let dir = tmp();
-        let path = write_site_toml(&dir, "127.0.0.1:9876");
+        let path = write_system_toml(&dir, "192.0.2.10:8444");
         let targets = discover_targets(&path);
         assert_eq!(targets.len(), 4); // h1, h2, h3, all
         for t in &targets {
-            assert!(t["addr"].as_str().unwrap().ends_with(":9876"),
-                "expected addr to end with :9876, got {}", t["addr"]);
+            assert_eq!(t["addr"].as_str().unwrap(), "127.0.0.1:8444");
         }
         let protos: Vec<&str> = targets.iter()
             .map(|t| t["proto"].as_str().unwrap())
@@ -339,23 +373,19 @@ mod bench_tests {
     }
 
     #[test]
-    fn targets_missing_site_toml_returns_empty() {
+    fn targets_missing_system_config_returns_empty() {
         let dir = tmp();
-        let path = dir.path().join("no-site.toml");
-        let targets = discover_targets(&path);
-        assert!(targets.is_empty());
+        let path = dir.path().join("no-system.toml");
+        assert!(discover_targets(&path).is_empty());
     }
 
+    // A system config with no [server].bind must not invent a port to bench.
     #[test]
-    fn targets_default_port_used_when_bind_missing() {
+    fn targets_empty_when_bind_missing() {
         let dir = tmp();
-        let p = dir.path().join("site.toml");
-        // site.toml without [server].bind
-        fs::write(&p, "site_name = \"test\"\n").unwrap();
-        let targets = discover_targets(&p);
-        // Should still produce 4 targets using default port 8443
-        assert_eq!(targets.len(), 4);
-        assert!(targets[0]["addr"].as_str().unwrap().ends_with(":8443"));
+        let p = dir.path().join("system.toml");
+        fs::write(&p, "[auth]\nbackend = \"auth\"\n").unwrap();
+        assert!(discover_targets(&p).is_empty());
     }
 
     #[test]

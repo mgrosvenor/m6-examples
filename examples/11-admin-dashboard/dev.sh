@@ -1,5 +1,6 @@
 #!/bin/bash
 # dev.sh — start all services for example 11-admin-dashboard.
+# M6_PORT=8444
 set -e
 
 SITE="$(cd "$(dirname "$0")" && pwd)"
@@ -83,7 +84,7 @@ done
 # ── m6-http ───────────────────────────────────────────────────────────────────
 # Truncate the log file so render-admin always reads current-session data.
 : > /tmp/m6/m6-http-admin.log
-m6-http "$SITE" "$SITE/site.toml" >> /tmp/m6/m6-http-admin.log 2>&1 &
+m6-http "$SITE" "$SITE/configs/system-dev.toml" >> /tmp/m6/m6-http-admin.log 2>&1 &
 HTTP_PID=$!
 
 echo ""
