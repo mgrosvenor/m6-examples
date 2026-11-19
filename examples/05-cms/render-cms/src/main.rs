@@ -548,15 +548,10 @@ fn handle_contact_post(req: &Request) -> Result<Response> {
 
 fn handle_dashboard(req: &Request) -> Result<Response> {
     let author = req["auth_username"].as_str().unwrap_or("");
-    // `unwrap_or_default`, not `?`. A FRESH CLONE HAS NO content/drafts/: git does
-    // not track empty directories, so the dashboard 500'd on a brand-new checkout
-    // until somebody happened to create a draft. `list_json` returns an error for a
-    // directory that does not exist, and the `?` turned that into a 500 on the one
-    // page a new reader opens first.
-    //
-    // No drafts and no drafts directory are the same thing to a reader, so they
-    // should render the same page. `cms_owned_stems` below already treats a missing
-    // directory as owning nothing; this call site was simply missed.
+    // `unwrap_or_default`, not `?`: git does not track empty directories, so a
+    // fresh clone has no content/drafts/, and no drafts directory is the same
+    // thing to a reader as no drafts. `cms_owned_stems` below treats a missing
+    // directory the same way.
     let drafts = req.list_json("content/drafts/").unwrap_or_default();
     let index = req
         .read_json("data/posts.json")
@@ -741,18 +736,10 @@ fn cms_owned_stems(req: &Request) -> std::collections::HashSet<String> {
 ///
 /// ## Why ownership is not inferred from the surviving files
 ///
-/// This used to work out which stems belonged to the CMS by reading
-/// `content/posts/`, the published directory, and preserving every index entry
-/// whose stem was not in it. **That made unpublishing do nothing at all.**
-///
 /// `handle_unpublish` deletes `content/posts/{stem}.json` and then calls this.
-/// By that point the stem is no longer in the published directory, so the old
-/// code classified it as markdown-sourced and carefully preserved the entry it
-/// was supposed to be removing. The API answered `{"unpublished": true}`, the
-/// post stayed in the index, stayed listed on `/blog`, and stayed readable at
-/// its own URL. Nothing reported a problem, and the example's own test suite
-/// passed it, because the test only checked that the response said "unpublished"
-/// and never asked whether the post had gone.
+/// Reading `content/posts/` to decide which stems belong to the CMS would find
+/// the stem already gone, classify it as markdown-sourced and keep the entry
+/// that unpublishing has to remove.
 ///
 /// A post's owner cannot be deduced from where it currently is, so ownership
 /// comes from `cms_owned_stems`, which counts drafts as CMS-owned too. An

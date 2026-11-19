@@ -228,17 +228,13 @@ fn status_of(hdr_sec: &str) -> u16 {
 /// ...
 /// ```
 ///
-/// This took the FIRST `\r\n\r\n` and the FIRST status line, so it read 103 and
-/// handed the actual 200 response back as the body. Every assertion in this file
-/// then failed against a perfectly correct server:
-///
-/// ```text
-/// FAIL  origin GET /blog → 200 — expected 200, got 103
-/// ```
+/// Reading only the FIRST `\r\n\r\n` and the FIRST status line would take the 103
+/// as the answer and hand the real 200 back as the body, so every assertion
+/// would fail against a correct server.
 ///
 /// It is separated from `https_get` so it can be tested on bytes, with no
-/// listener and no TLS: the defect was in parsing, and a test that needs a
-/// running six-node topology to exercise the parser is a test nobody runs.
+/// listener and no TLS: a test of the parser that needs a running six-node
+/// topology is a test nobody runs.
 fn parse_response(s: &str) -> Response {
     let mut cursor = 0usize;
     let (hdr_sec, body) = loop {

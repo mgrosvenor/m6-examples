@@ -27,19 +27,9 @@ mkdir -p /tmp/m6
 # Kill any stale m6 processes holding port 8443 or our sockets.
 # lsof -ti gives the PID holding the port silently.
 lsof -ti :8443 2>/dev/null | xargs kill -9 2>/dev/null || true
-# Kill only THIS example's own processes.
-#
-# This used to be `pkill -x m6-http; pkill -x m6-html; ...`, which matches by
-# process name across the whole machine. Anyone with another m6 site running --
-# their own site, a preview instance, a multi-node local fleet -- lost all of it
-# the moment they started this example, with no warning and nothing in the log
-# saying what had happened. It killed a running seven-node local fleet exactly
-# that way.
-#
-# `pgrep -f "$SITE"` matches the site directory in the command line instead, so
-# it can only ever reach processes started for this example. The port holder on
-# the bind address is killed separately above, because a stale process from an
-# earlier run of THIS example is the case the cleanup is actually for.
+# Kill only this example's own processes: matching the site directory in the
+# command line cannot reach another m6 on the machine. The port holder is killed
+# above, to clear a stale run of this example.
 kill_own() {
     local pid
     for pid in $(pgrep -f "$SITE" 2>/dev/null || true); do

@@ -209,17 +209,8 @@ fn status_of(hdr_sec: &str) -> u16 {
 ///
 /// RFC 9110 15.2 requires a client to parse and discard any number of 1xx
 /// responses before the final one. `m6-http` sends `103 Early Hints` ahead of
-/// the real response on any route carrying preload hints, and this parser took
-/// the FIRST `\r\n\r\n` and the FIRST status line, so it read 103 and handed the
-/// actual response back as the body:
-///
-/// ```text
-/// FAIL  GET / reachable — expected 200, got 103
-/// ```
-///
-/// The same defect was in `09-global-deployment`'s client. Both are fixed the
-/// same way; neither is a server regression. They began failing when early hints
-/// started firing, which is m6 #74/#78 landing. m6 issue #86.
+/// the real response on any route carrying preload hints, so the parser skips
+/// every 1xx block and reads the status and headers of the final response.
 fn parse_response(s: &str) -> Response {
     let mut cursor = 0usize;
     let (hdr_sec, body) = loop {

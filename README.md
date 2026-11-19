@@ -78,8 +78,7 @@ cargo build --release -p render-contact
 ```
 
 `dev.sh` stops only the processes belonging to its own example, so another m6
-site on the same machine keeps running. It used to run `pkill -x m6-http`, which
-matches by name across the whole box and took down anything else you had up.
+site on the same machine keeps running.
 
 ## Running the tests
 

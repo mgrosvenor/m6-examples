@@ -84,8 +84,7 @@ systemctl enable --now wg-quick@wg0
 echo "=== Firewall ==="
 ufw allow 22/tcp
 # The backbone: h2c on the WireGuard address is reachable through wg0 only.
-# `insert 1` puts these rules first even on an origin set up by an earlier
-# version of this script, whose `allow 80/tcp` would otherwise match first.
+# `insert 1` puts these rules before any `allow 80/tcp` already in the chain.
 # The deny goes in first so the wg0 allow lands above it.
 ufw insert 1 deny to 10.0.0.1 port 80 proto tcp
 ufw insert 1 allow in on wg0 to 10.0.0.1 port 80 proto tcp
