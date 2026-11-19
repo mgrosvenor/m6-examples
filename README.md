@@ -24,8 +24,9 @@ export PATH="$PWD/target/release:$PATH"
 mkcert -install
 ```
 
-Each example's `dev.sh` issues its own certificate into that example's `keys/` on
-first run, so there is nothing to place or symlink by hand.
+Each example's `dev.sh` runs `examples/dev-keys.sh`, which writes the development
+certificate and auth keys to `/tmp/m6/dev` on first run, so there is nothing to
+place or symlink by hand.
 
 ### Check the install
 

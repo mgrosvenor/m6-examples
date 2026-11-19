@@ -4,5 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+rustls-pemfile = "2"
 m6-core    = { path = "../../../../m6/m6-core" }
 serde_json = "1"

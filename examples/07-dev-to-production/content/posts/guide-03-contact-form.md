@@ -1,8 +1,8 @@
 +++
 title   = "Guide 03: Contact Form with a Custom Renderer"
 date    = "2025-01-05"
-summary = "Write your first custom renderer using m6-render. Handle a GET/POST contact form and send email via SMTP."
-tags    = ["guide", "tutorial", "m6-render", "custom-renderer"]
+summary = "Write your first custom renderer with m6-core. Handle a GET/POST contact form and send email via SMTP from the renderer's own event loop."
+tags    = ["guide", "tutorial", "m6-core", "custom-renderer"]
 cover   = "https://picsum.photos/seed/guide03/1200/500"
 +++
 
@@ -36,7 +36,7 @@ flowchart LR
     rc --"email"--> SMTP[("SMTP server")]
 </pre>
 
-Any HTTP/1.1 server that listens on a Unix socket. m6-http discovers it via inotify, adds it to the backend pool, and routes requests to it. The m6-render library handles the socket and HTTP plumbing — you write handler functions.
+Any HTTP/1.1 server that listens on a Unix socket. m6-http finds it when it expands the pool's socket glob at start, and routes requests to it. A Rust renderer links `m6-core`, which supplies the parts of a service. The service writes its own event loop and its handlers.
 
 ## `render-contact/Cargo.toml`
 
@@ -47,57 +47,68 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-m6-render  = { git = "https://github.com/m6/m6", tag = "v0.1.0", features = ["smtp"] }
+m6-core    = { path = "../../../../m6/m6-core", features = ["email"] }
+anyhow     = "1"
 serde_json = "1"
 ```
 
+The `email` feature compiles `m6_core::email`: an SMTP client the service's own loop drives without blocking.
+
 ## `render-contact/src/main.rs`
 
+State is a plain value built once at start. Here it is the mail relay, resolved and checked, and the two addresses:
+
 ```rust
-use m6_render::prelude::*;
+use m6_core::email::{lettre, Relay, RelayConfig, Smtp};
+use m6_core::prelude::*;
 
-// SmtpTransport is Send+Sync — safe to share across threads
 struct Global {
-    mailer: SmtpTransport,
+    relay: Relay,
+    from:  String,
+    to:    String,
 }
 
-fn init_global(config: &Map<String, Value>) -> Result<Global> {
-    Ok(Global {
-        mailer: SmtpTransport::builder(config["smtp"]["host"].as_str()?)
-            .port(config["smtp"]["port"].as_u64()? as u16)
-            .credentials(
-                config["smtp"]["username"].as_str()?,
-                config["smtp"]["password"].as_str()?,
-            )
-            .build()?,
-    })
-}
-
-fn handle_post(req: &Request, global: &Global, _local: &mut ()) -> Result<Response> {
-    let name    = req.field("name")?;
-    let email   = req.field("email")?;
-    let message = req.field("message")?;
-
-    global.mailer.send(
-        Message::builder()
-            .from(req["smtp"]["from"].as_str()?.parse()?)
-            .to(req["smtp"]["to"].as_str()?.parse()?)
-            .subject(format!("Contact from {}", name))
-            .body(format!("From: {} <{}>\n\n{}", name, email, message))?,
-    )?;
-
-    Response::render_with("templates/contact.html", req, json!({"sent": true, "name": name}))
-}
-
-fn main() -> Result<()> {
-    App::with_global(init_global)
-        .route_post("/contact", handle_post)
-        // GET /contact served by the framework default (template render from config)
-        .run()
+fn load_state(site: &Site) -> Result<Global> {
+    let config = site.user_config();
+    let host = config["smtp"]["host"].as_str()
+        .ok_or_else(|| Error::Other(anyhow::anyhow!("smtp.host missing")))?;
+    // ... port, username, password, from and to are read the same way
+    let relay = Relay::new(&RelayConfig {
+        host: host.to_string(),
+        port,
+        starttls: tls,          // None only for localhost, 127.0.0.1 and ::1
+        credentials,
+        timeout: Duration::from_secs(20),
+    }).map_err(|e| Error::Other(anyhow::anyhow!("{e}")))?;
+    Ok(Global { relay, from, to })
 }
 ```
 
-`App::with_global` initialises shared state once at startup — the `SmtpTransport` connection pool lives here. Handler functions receive `&Global` (shared) and `&mut Local` (per-thread, unused here). The framework dispatches methods: `route_post` registers a POST handler; GET falls back to the config-driven template render.
+The POST handler builds the message and starts the send on its connection slot's `Smtp`. It returns the page to show once the relay has accepted the message:
+
+```rust
+fn handle_post(req: &Request, global: &Global, smtp: &mut Smtp) -> Result<Response> {
+    let name    = req.field("name")?;
+    let email   = req.field("email")?;
+    let text    = req.field("message")?;
+
+    let msg = message(global, &name, &email, &text)?;
+    smtp.start(&global.relay, &msg).map_err(|e| Error::Other(e.into()))?;
+
+    Response::render_with("templates/contact.html", req, json!({"sent": true, "name": name}))
+}
+```
+
+The routes are a constant, and `main` is the service's own loop:
+
+```rust
+const ROUTES: &[CodeRoute] = &[CodeRoute {
+    pattern: "/contact",
+    method: RouteMethod::Post,
+}];
+```
+
+`GET /contact` is a template route in the configuration, so only the POST is code.
 
 ## `configs/render-contact.conf`
 
@@ -107,21 +118,26 @@ secrets_file  = "/etc/m6/render-contact.toml"
 
 [[route]]
 path     = "/contact"
+methods  = ["GET"]
 template = "templates/contact.html"
 params   = []
 cache    = "no-store"
 
-# Development defaults — overridden by secrets_file in production
+# Development defaults. In production these move to secrets_file and are
+# deleted from here: a key set in both files is refused at start.
 [smtp]
 host     = "localhost"
 port     = 1025
+# The development relay speaks plain SMTP, which m6-core allows only to
+# localhost. Production relays take STARTTLS: delete this line.
+starttls = false
 username = ""
 password = ""
 from     = "noreply@example.com"
 to       = "owner@example.com"
 ```
 
-`secrets_file` is merged in if the file exists. If absent (on dev machines), it's silently ignored and the `[smtp]` block below provides defaults. The file path is safe to commit — it contains no secrets itself.
+`secrets_file` is merged in if the file exists. If absent (on dev machines), it's silently ignored and the `[smtp]` block above provides defaults. The path is absolute and safe to commit — it contains no secrets itself. `methods = ["GET"]` limits the template route to GET, because the POST is the code route in `main.rs`.
 
 Production secrets file (on the server, not in version control):
 
@@ -161,7 +177,7 @@ Same template handles both states — `sent` is absent on GET, `true` after a su
 ```toml
 [[backend]]
 name    = "render-contact"
-sockets = "/run/m6/render-contact-*.sock"
+sockets = "/run/m6/render-contact*.sock"
 
 [[route]]
 path    = "/contact"
@@ -176,19 +192,19 @@ The socket name is derived from the config filename: `configs/render-contact.con
 ./target/release/render-contact "$SITE" "$SITE/configs/render-contact.conf" &
 ```
 
-Added alongside the existing m6-html, m6-file, and m6-http lines. The renderer starts, creates its socket, and m6-http discovers it via inotify.
+Added alongside the existing m6-html, m6-file, and m6-http lines. The renderer starts and creates its socket, and m6-http finds it when it expands the pool's glob at its own start, so the backends start before m6-http.
 
-## How App::with_global works
+## How the loop sends mail
 
-The framework initialises global state once on startup:
+`main` loads the site, builds its state with `load_state` and runs the loop with one `Smtp` slot per connection slot:
 
-1. Loads config (renderer conf + secrets overlay)
-2. Calls `init_global(&config)` — runs once, result stored in `Arc`
-3. Spawns N worker threads, each calling `init_local()` (default: no-op, returns `()`)
-4. Worker threads wait for connections on the Unix socket
-5. For each request: route match → call handler with `(req, &global, &mut local)`
+1. `Site::load` reads the config (the renderer conf and the secrets overlay), `site.toml` and the templates, once. A start that cannot build its state prints why and exits 2.
+2. The loop waits on one poll for the listener, the signals, every client and every mail connection.
+3. A `POST /contact` arrives as `Handled::Code(0, req)`. The handler starts the send, and the loop holds the "sent" page and registers the mail socket under the slot's odd token.
+4. Each time the mail socket fires, `smtp.drive()` advances the exchange without blocking: `Ok(None)` means keep waiting, `Ok(Some(()))` means the relay accepted the message and the loop sends the held page, and `Err` answers 500 with the cause.
+5. A relay that takes longer than its deadline answers 504, and a client that leaves while its message is in flight drops the exchange.
 
-This gives you zero-overhead shared access to immutable state (connection pools, compiled regexes, loaded keys) and mutable per-thread state (database connections, buffers) without any locking on the hot path.
+State is a plain value in `main`, owned by the one thread that runs the loop, so it needs no lock. A slow relay holds one client's answer and never the loop.
 
 ---
 

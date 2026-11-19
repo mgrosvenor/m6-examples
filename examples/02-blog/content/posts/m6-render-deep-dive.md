@@ -1,20 +1,20 @@
 +++
-title   = "m6-html and m6-render: Templates, Params, and Custom Renderers"
+title   = "m6-html and m6-core: Templates, Params, and Custom Renderers"
 date    = "2025-02-28"
-summary = "The renderer framework that makes m6-html a one-liner — and how to use the same library to write custom backends in Rust."
-tags    = ["m6-html", "m6-render", "templates", "internals"]
+summary = "The parts that make m6-html a small service — and how to use the same library, m6-core, to write custom backends in Rust."
+tags    = ["m6-html", "m6-core", "templates", "internals"]
 cover   = "https://picsum.photos/seed/m6render/1200/500"
 +++
 
-m6-html's entire application logic is a single function call:
+m6-html's application logic is one call and a loop:
 
 ```rust
-fn main() -> Result<()> {
-    App::new().run()
-}
+let mut site = Site::load("m6-html", &[], &[], &TeraFactory);
+// ... bind the socket, then the event loop: read a request,
+// site.handle(&head), write the answer
 ```
 
-Everything else — route matching, params loading, key merging, template rendering, compression, error handling, logging — is the m6-render framework. Understanding the framework tells you everything about how m6-html works, and also how to write your own custom renderer for anything m6-html can't do on its own.
+It passes no code routes and no handler names, so every route it serves is a template from its config. Everything else — route matching, params loading, key merging, template rendering, compression, error handling, logging — comes from `m6-core`, the one crate every m6 service links. Understanding `m6-core` tells you everything about how m6-html works, and also how to write your own custom renderer for anything m6-html can't do on its own.
 
 ## How m6-html renders a request
 
@@ -87,28 +87,33 @@ One Tera behaviour worth knowing: `{% set %}` in a child template is silently di
 
 The `safe` filter marks the value as trusted HTML — necessary for rendered Markdown bodies.
 
-## Custom renderers with m6-render
+## Custom renderers with m6-core
 
-Any route that requires logic beyond "render this template with this data" needs a custom renderer. The m6-render library handles all the socket/HTTP plumbing; you write handler functions.
+Any route that requires logic beyond "render this template with this data" needs a custom renderer. `m6-core` supplies the parts of a service: routing, the request dictionary, templates, and the pieces of an event loop. The service writes its handlers and its own loop, so nothing is hidden in a framework.
 
-A minimal custom renderer:
+A custom renderer declares its code routes as a constant and loads the site at start:
 
 ```rust
-use m6_render::{App, Request, Response};
+use m6_core::prelude::*;
 
-fn handle(req: &Request) -> Response {
-    let name = req.path_param("name").unwrap_or("world");
-    Response::html(200, format!("<h1>Hello, {name}!</h1>"))
+const ROUTES: &[CodeRoute] = &[CodeRoute {
+    pattern: "/hello/{name}",
+    method: RouteMethod::Get,
+}];
+
+fn handle(req: &Request) -> Result<Response> {
+    let name = req["name"].as_str().unwrap_or("world");
+    Ok(Response::html(format!("<h1>Hello, {name}!</h1>")))
 }
 
-fn main() -> anyhow::Result<()> {
-    App::new()
-        .route("/hello/{name}", handle)
-        .run()
-}
+// In main: let mut site = Site::load("my-renderer", ROUTES, &[], &TeraFactory);
+// then the loop, which answers each request with
+//     Handled::Code(0, req) => site.finish(&req, handle(&req)?),
 ```
 
-The `Request` type gives you access to path params, query params, headers, and the request body. The `Response` type covers the common cases: HTML, JSON, redirect, file. For streaming or complex cases, you can construct a raw response.
+`Site::load` reads the config, `site.toml` and the templates once. `site.handle` matches a request and hands a code route back as `Handled::Code(index, req)`, and `site.finish` adds the site-wide parts to the answer: a rendered template, `Cache-Control`, compression. `docs/m6-app-anatomy.md` in the m6 repository gives the whole loop for a one-route service, and every example's `main.rs` is that loop with its own handlers.
+
+The `Request` type gives you the path params (`req["name"]`), the query, the form fields, the headers, the body and the caller's identity. The `Response` type covers the common cases: HTML, JSON, redirect, a rendered template. State, such as a mail relay or a database, is a plain value in `main`, owned by the one thread that runs the loop.
 
 The socket naming convention is the same as m6-html: the config filename determines the socket path. `configs/my-renderer.conf` → `/run/m6/my-renderer.sock`. Declare it as a backend in `site.toml`:
 
@@ -128,19 +133,16 @@ backend = "my-renderer"
 
 ## m6-file
 
-m6-file serves files from the filesystem. It shares the socket naming convention and CLI interface with m6-html, but doesn't use the m6-render library internally — there are no templates, no params, no thread pool.
-
-Configuration is straightforward:
+m6-file serves files from the filesystem. It shares the socket naming convention and CLI interface with m6-html, but has no templates and no params. Its one handler is registered in code under the name `files`, and configuration binds it to a path:
 
 ```toml
 [[route]]
-path = "/assets/{relpath}"
-root = "assets/"
+path    = "/assets/{*relpath}"
+handler = "files"
+root    = "assets/"
 ```
 
-`GET /assets/css/main.css` → resolves to `assets/css/main.css` relative to the site directory. Path traversal is blocked: resolved paths must stay within `root`, `..` sequences return 404, and symlinks outside root are not followed.
-
-All file responses are `Cache-Control: public`, which means m6-http caches them. In practice, your CSS and JS are served from memory after the first request.
+`GET /assets/css/main.css` → resolves to `assets/css/main.css` relative to the site directory. `{*relpath}` captures the rest of the path, slashes included. Path traversal is blocked: resolved paths must stay within `root`, `..` sequences return 404, and symlinks outside root are not followed.
 
 ## Compression
 

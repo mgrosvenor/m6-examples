@@ -127,7 +127,7 @@ check_nonempty() {
 # Polls until the snippet exits 0, then passes and says how long it took; fails
 # when the budget is gone. Replaces `sleep 2`.
 #
-# Publishing writes a JSON file, rebuilds the index and touches site.toml, and
+# Publishing writes a JSON file, rebuilds the index and sends `POST /genid`, and
 # m6-http and m6-html then reload. How long that takes depends on the machine.
 # A fixed sleep encodes one machine's answer: 2 seconds was enough on a laptop
 # and not on m6's build host under load, where this suite reported that a
@@ -237,8 +237,8 @@ check "GET an unrouted path is a real 404" \
 
 # ── 3. Static assets, through m6-file ────────────────────────────────────────
 #
-# Every one of these was a 502 until 2026-09-14: m6-file became an `App` service
-# and every route has to name its handler, so the example's config was refused at
+# Every one of these was a 502 until 2026-09-14: m6-file began registering its
+# handler by name and every route has to name it, so the example's config was refused at
 # startup and the service exited before binding. Nothing in the suite noticed,
 # because the suite had no asset check that could tell 502 from 200.
 
@@ -465,8 +465,9 @@ pubresp=$(authed -X POST "$BASE/api/publish/$STEM" -w '\n%{http_code}')
 pubcode="${pubresp##*$'\n'}"
 check "POST /api/publish/<stem>" "$pubcode" "200"
 
-# Publishing touches site.toml, which reloads the routes and drops the cached
-# index. Wait for the effect rather than for a duration.
+# Publishing sends `POST /genid`, which reloads the backends and empties the
+# cache. The answer waits for it, and the poll below still states the
+# requirement rather than a duration.
 wait_for "the published post reaches /blog" 30 \
     "$(printf '%s' "${CURL[*]}") '$BASE/blog' | grep -qF '$STEM'"
 
@@ -474,12 +475,6 @@ check "the published post is readable" "$(code "$BASE/blog/$STEM")" "200"
 check_contains "the published post serves its body" "$(body "$BASE/blog/$STEM")" "$MARKER"
 check_contains "the published post is listed on /blog" "$(body "$BASE/blog")" "$STEM"
 
-# One touch just ahead of the call, so the touch the unpublish makes follows
-# within a few milliseconds of another. On Linux a single touch already reports
-# twice to the watcher, and a backend that holds the second report reloads after
-# m6-http has cleared its cache. This makes the same close pair on every
-# platform, so the suite exercises that gap instead of depending on the host.
-touch "$SITE/site.toml"
 unpubresp=$(authed -X POST "$BASE/api/unpublish/$STEM" -w '\n%{http_code}')
 unpubcode="${unpubresp##*$'\n'}"
 check "POST /api/unpublish/<stem>" "$unpubcode" "200"

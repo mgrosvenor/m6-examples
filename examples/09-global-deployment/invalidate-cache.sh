@@ -13,7 +13,7 @@
 # Examples:
 #   ./invalidate-cache.sh                         # all nodes (production)
 #   ./invalidate-cache.sh deploy.local.toml       # local dev
-#   ./invalidate-cache.sh deploy.toml sf london   # specific nodes only
+#   ./invalidate-cache.sh deploy.toml edge-a edge-d   # specific nodes only
 
 set -euo pipefail
 

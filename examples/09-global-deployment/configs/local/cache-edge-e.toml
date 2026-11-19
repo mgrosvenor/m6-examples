@@ -1,0 +1,15 @@
+# edge-e cache node (local dev) — port 9006
+
+[server]
+bind     = "127.0.0.1:9006"
+tls_cert = "/tmp/m6/dev/dev.pem"
+tls_key  = "/tmp/m6/dev/dev-key.pem"
+
+[node]
+name = "edge-e"
+
+# The cache node follows the origin's site generation (see configs/cache-edge-a.toml).
+[genid]
+upstream       = "origin"
+token_file     = "/tmp/m6/09-global-deployment/genid-read.token"
+heartbeat_secs = 2

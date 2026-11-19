@@ -99,22 +99,25 @@ pub fn backends_summary_blob(
     let mut backend_names: Vec<String> = backend_route_map.keys().cloned().collect();
     backend_names.sort(); // deterministic order
 
-    let backends: Vec<Value> = backend_names.iter().map(|name| {
-        let ents  = by_backend.get(name).map(|v| v.as_slice()).unwrap_or(&[]);
-        let s     = compute_stats(ents);
-        let routes = backend_route_map.get(name).cloned().unwrap_or_default();
-        json!({
-            "name":           name,
-            "routes":         routes,          // paths handled by this backend
-            "requests":       s.requests,
-            "cache_hits":     s.cache_hits,
-            "cache_misses":   s.cache_misses,
-            "hit_rate":       s.hit_rate,
-            "miss_rate":      s.miss_rate,
-            "hit_p50_ns":     s.hit_pcts[3],   // index 3 = p50
-            "avg_latency_ns": s.avg_latency_ns,
+    let backends: Vec<Value> = backend_names
+        .iter()
+        .map(|name| {
+            let ents = by_backend.get(name).map(|v| v.as_slice()).unwrap_or(&[]);
+            let s = compute_stats(ents);
+            let routes = backend_route_map.get(name).cloned().unwrap_or_default();
+            json!({
+                "name":           name,
+                "routes":         routes,          // paths handled by this backend
+                "requests":       s.requests,
+                "cache_hits":     s.cache_hits,
+                "cache_misses":   s.cache_misses,
+                "hit_rate":       s.hit_rate,
+                "miss_rate":      s.miss_rate,
+                "hit_p50_ns":     s.hit_pcts[3],   // index 3 = p50
+                "avg_latency_ns": s.avg_latency_ns,
+            })
         })
-    }).collect();
+        .collect();
 
     let window_secs = ts_diff_secs(
         entries.first().and_then(|v| v["timestamp"].as_str()),
@@ -149,7 +152,8 @@ fn parse_site_topology(site_toml: &Path) -> (String, HashMap<String, Vec<String>
         Err(_) => return empty,
     };
 
-    let site_name = parsed.get("site")
+    let site_name = parsed
+        .get("site")
         .and_then(|s| s.get("name"))
         .and_then(|n| n.as_str())
         .unwrap_or("m6-http")
@@ -169,8 +173,16 @@ fn parse_site_topology(site_toml: &Path) -> (String, HashMap<String, Vec<String>
     // Map routes → backends.
     if let Some(routes) = parsed.get("route").and_then(|r| r.as_array()) {
         for route in routes {
-            let path    = route.get("path").and_then(|p| p.as_str()).unwrap_or("").to_string();
-            let backend = route.get("backend").and_then(|b| b.as_str()).unwrap_or("").to_string();
+            let path = route
+                .get("path")
+                .and_then(|p| p.as_str())
+                .unwrap_or("")
+                .to_string();
+            let backend = route
+                .get("backend")
+                .and_then(|b| b.as_str())
+                .unwrap_or("")
+                .to_string();
             if !path.is_empty() && !backend.is_empty() {
                 map.entry(backend).or_default().push(path);
             }
@@ -218,21 +230,35 @@ fn build_stats_blob(name: &str, entries: &[Value]) -> Value {
         let rs = by_path.entry(path).or_default();
         rs.requests += 1;
         rs.latency_sum += latency;
-        if cache_hit { rs.cache_hits += 1; }
+        if cache_hit {
+            rs.cache_hits += 1;
+        }
     }
-    let mut routes: Vec<Value> = by_path.into_iter().map(|(path, rs)| {
-        let hit_rate = if rs.requests > 0 { rs.cache_hits as f64 / rs.requests as f64 } else { 0.0 };
-        let avg_lat  = rs.latency_sum.checked_div(rs.requests).unwrap_or(0);
-        json!({
-            "path":           path,
-            "requests":       rs.requests,
-            "cache_hits":     rs.cache_hits,
-            "cache_misses":   rs.requests - rs.cache_hits,
-            "hit_rate":       (hit_rate * 1000.0).round() / 1000.0,
-            "avg_latency_ns": avg_lat,
+    let mut routes: Vec<Value> = by_path
+        .into_iter()
+        .map(|(path, rs)| {
+            let hit_rate = if rs.requests > 0 {
+                rs.cache_hits as f64 / rs.requests as f64
+            } else {
+                0.0
+            };
+            let avg_lat = rs.latency_sum.checked_div(rs.requests).unwrap_or(0);
+            json!({
+                "path":           path,
+                "requests":       rs.requests,
+                "cache_hits":     rs.cache_hits,
+                "cache_misses":   rs.requests - rs.cache_hits,
+                "hit_rate":       (hit_rate * 1000.0).round() / 1000.0,
+                "avg_latency_ns": avg_lat,
+            })
         })
-    }).collect();
-    routes.sort_by(|a, b| b["requests"].as_u64().unwrap_or(0).cmp(&a["requests"].as_u64().unwrap_or(0)));
+        .collect();
+    routes.sort_by(|a, b| {
+        b["requests"]
+            .as_u64()
+            .unwrap_or(0)
+            .cmp(&a["requests"].as_u64().unwrap_or(0))
+    });
 
     let window_secs = ts_diff_secs(
         entries.first().and_then(|v| v["timestamp"].as_str()),
@@ -272,7 +298,7 @@ struct AggStats {
     hit_rate: f64,
     miss_rate: f64,
     avg_latency_ns: u64,
-    hit_pcts: [u64; 8],   // p0,p10,p25,p50,p75,p90,p99,max
+    hit_pcts: [u64; 8], // p0,p10,p25,p50,p75,p90,p99,max
     miss_pcts: [u64; 8],
 }
 
@@ -286,41 +312,66 @@ fn compute_stats(entries: &[&Value]) -> AggStats {
     for v in entries {
         let f = &v["fields"];
         let cache_hit = f["cache_hit"].as_bool().unwrap_or(false);
-        let latency   = f["latency_ns"].as_u64().unwrap_or(0);
+        let latency = f["latency_ns"].as_u64().unwrap_or(0);
         requests += 1;
         latency_sum += latency;
         if cache_hit {
             cache_hits += 1;
-            if latency > 0 { hit_lats.push(latency); }
+            if latency > 0 {
+                hit_lats.push(latency);
+            }
         } else {
-            if latency > 0 { miss_lats.push(latency); }
+            if latency > 0 {
+                miss_lats.push(latency);
+            }
         }
     }
 
     let cache_misses = requests.saturating_sub(cache_hits);
-    let hit_rate  = if requests > 0 { cache_hits  as f64 / requests as f64 } else { 0.0 };
-    let miss_rate = if requests > 0 { cache_misses as f64 / requests as f64 } else { 0.0 };
+    let hit_rate = if requests > 0 {
+        cache_hits as f64 / requests as f64
+    } else {
+        0.0
+    };
+    let miss_rate = if requests > 0 {
+        cache_misses as f64 / requests as f64
+    } else {
+        0.0
+    };
     let avg_latency_ns = latency_sum.checked_div(requests).unwrap_or(0);
 
     hit_lats.sort_unstable();
     miss_lats.sort_unstable();
 
     AggStats {
-        requests, cache_hits, cache_misses,
-        hit_rate:  (hit_rate  * 1000.0).round() / 1000.0,
+        requests,
+        cache_hits,
+        cache_misses,
+        hit_rate: (hit_rate * 1000.0).round() / 1000.0,
         miss_rate: (miss_rate * 1000.0).round() / 1000.0,
         avg_latency_ns,
-        hit_pcts:  eight_pcts(&hit_lats),
+        hit_pcts: eight_pcts(&hit_lats),
         miss_pcts: eight_pcts(&miss_lats),
     }
 }
 
 /// Compute [p0,p10,p25,p50,p75,p90,p99,max] from a sorted slice.
 fn eight_pcts(sorted: &[u64]) -> [u64; 8] {
-    if sorted.is_empty() { return [0; 8]; }
+    if sorted.is_empty() {
+        return [0; 8];
+    }
     let n = sorted.len() - 1;
     let p = |pct: usize| sorted[n * pct / 100];
-    [p(0), p(10), p(25), p(50), p(75), p(90), p(99), sorted[sorted.len() - 1]]
+    [
+        p(0),
+        p(10),
+        p(25),
+        p(50),
+        p(75),
+        p(90),
+        p(99),
+        sorted[sorted.len() - 1],
+    ]
 }
 
 /// Read "request complete" entries from the log.
@@ -367,38 +418,60 @@ fn load_request_complete(
 fn aggregate_routes(entries: &[Value]) -> Value {
     let sample_requests = entries.len();
     let first_ts = entries.first().and_then(|v| v["timestamp"].as_str());
-    let last_ts  = entries.last().and_then(|v| v["timestamp"].as_str());
+    let last_ts = entries.last().and_then(|v| v["timestamp"].as_str());
     let window_secs = ts_diff_secs(first_ts, last_ts);
 
-    struct Rs { requests: u64, cache_hits: u64, latency_sum: u64 }
+    struct Rs {
+        requests: u64,
+        cache_hits: u64,
+        latency_sum: u64,
+    }
     let mut by_path: HashMap<String, Rs> = HashMap::new();
 
     for v in entries {
         let f = &v["fields"];
-        let path      = f["path"].as_str().unwrap_or("/").to_string();
+        let path = f["path"].as_str().unwrap_or("/").to_string();
         let cache_hit = f["cache_hit"].as_bool().unwrap_or(false);
-        let latency   = f["latency_ns"].as_u64().unwrap_or(0);
-        let s = by_path.entry(path).or_insert(Rs { requests: 0, cache_hits: 0, latency_sum: 0 });
-        s.requests    += 1;
+        let latency = f["latency_ns"].as_u64().unwrap_or(0);
+        let s = by_path.entry(path).or_insert(Rs {
+            requests: 0,
+            cache_hits: 0,
+            latency_sum: 0,
+        });
+        s.requests += 1;
         s.latency_sum += latency;
-        if cache_hit { s.cache_hits += 1; }
+        if cache_hit {
+            s.cache_hits += 1;
+        }
     }
 
-    let mut routes: Vec<Value> = by_path.into_iter().map(|(path, s)| {
-        let misses   = s.requests - s.cache_hits;
-        let hit_rate = if s.requests > 0 { s.cache_hits as f64 / s.requests as f64 } else { 0.0 };
-        let avg_lat  = s.latency_sum.checked_div(s.requests).unwrap_or(0);
-        json!({
-            "path":           path,
-            "requests":       s.requests,
-            "cache_hits":     s.cache_hits,
-            "cache_misses":   misses,
-            "hit_rate":       (hit_rate * 1000.0).round() / 1000.0,
-            "avg_latency_ns": avg_lat,
+    let mut routes: Vec<Value> = by_path
+        .into_iter()
+        .map(|(path, s)| {
+            let misses = s.requests - s.cache_hits;
+            let hit_rate = if s.requests > 0 {
+                s.cache_hits as f64 / s.requests as f64
+            } else {
+                0.0
+            };
+            let avg_lat = s.latency_sum.checked_div(s.requests).unwrap_or(0);
+            json!({
+                "path":           path,
+                "requests":       s.requests,
+                "cache_hits":     s.cache_hits,
+                "cache_misses":   misses,
+                "hit_rate":       (hit_rate * 1000.0).round() / 1000.0,
+                "avg_latency_ns": avg_lat,
+            })
         })
-    }).collect();
+        .collect();
 
-    routes.sort_by(|a, b| b["requests"].as_u64().unwrap_or(0).cmp(&a["requests"].as_u64().unwrap_or(0)));
+    routes.sort_by(|a, b| {
+        b["requests"]
+            .as_u64()
+            .unwrap_or(0)
+            .cmp(&a["requests"].as_u64().unwrap_or(0))
+    });
     json!({ "sample_requests": sample_requests, "sample_window_secs": window_secs, "routes": routes })
 }
 
@@ -407,12 +480,26 @@ fn ts_diff_secs(first: Option<&str>, last: Option<&str>) -> Option<u64> {
     let parse = |s: &str| -> Option<u64> {
         let s = s.trim_end_matches('Z').get(..19)?;
         let parts: Vec<&str> = s.splitn(2, 'T').collect();
-        if parts.len() != 2 { return None; }
-        let date: Vec<u32> = parts[0].splitn(3, '-').filter_map(|x| x.parse().ok()).collect();
-        let time: Vec<u32> = parts[1].splitn(3, ':').filter_map(|x| x.parse().ok()).collect();
-        if date.len() < 3 || time.len() < 3 { return None; }
-        let y = date[0] as u64; let mo = date[1] as u64; let d = date[2] as u64;
-        let h = time[0] as u64; let m   = time[1] as u64; let s_ = time[2] as u64;
+        if parts.len() != 2 {
+            return None;
+        }
+        let date: Vec<u32> = parts[0]
+            .splitn(3, '-')
+            .filter_map(|x| x.parse().ok())
+            .collect();
+        let time: Vec<u32> = parts[1]
+            .splitn(3, ':')
+            .filter_map(|x| x.parse().ok())
+            .collect();
+        if date.len() < 3 || time.len() < 3 {
+            return None;
+        }
+        let y = date[0] as u64;
+        let mo = date[1] as u64;
+        let d = date[2] as u64;
+        let h = time[0] as u64;
+        let m = time[1] as u64;
+        let s_ = time[2] as u64;
         let years = y.saturating_sub(1970);
         let days = years * 365 + years / 4 + (mo.saturating_sub(1)) * 30 + d;
         Some(days * 86400 + h * 3600 + m * 60 + s_)

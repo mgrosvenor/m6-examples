@@ -30,47 +30,49 @@ useradd --system --no-create-home --shell /usr/sbin/nologin m6
 mkdir -p /var/www/my-blog
 chown m6:m6 /var/www/my-blog
 
-# Auth keys — readable only by m6 user
+# Auth keys, kept root-owned because systemd reads them as a credential
 mkdir -p /etc/m6
-openssl ecparam -name prime256v1 -genkey -noout -out /etc/m6/auth.pem
-openssl ec -in /etc/m6/auth.pem -pubout -out /etc/m6/auth.pub
-chown m6:m6 /etc/m6/auth.pem /etc/m6/auth.pub
-chmod 600   /etc/m6/auth.pem
+openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -pkeyopt ec_param_enc:named_curve -out /etc/m6/auth.pem
+openssl pkey -in /etc/m6/auth.pem -pubout -out /etc/m6/auth.pub
+chmod 600 /etc/m6/auth.pem
+chmod 600 /etc/m6/auth.pub
 
 # TLS certificate via Let's Encrypt
 certbot certonly --standalone -d example.com
 # Outputs /etc/letsencrypt/live/example.com/fullchain.pem
 #         /etc/letsencrypt/live/example.com/privkey.pem
-# Add m6 to the ssl-cert group or adjust permissions as needed
+# The m6-http unit delivers both through LoadCredential
 
 # System config — this node's own state, passed to m6-http as its second argument
 cat > /etc/m6/my-blog.toml << 'TOML'
 [server]
 bind     = "0.0.0.0:443"
-tls_cert = "/etc/letsencrypt/live/example.com/fullchain.pem"
-tls_key  = "/etc/letsencrypt/live/example.com/privkey.pem"
+tls_cert = "/run/credentials/m6-http.service/tls-cert.pem"
+tls_key  = "/run/credentials/m6-http.service/tls-key.pem"
 
 [node]
 name = "origin"
 
 [auth]
-backend    = "m6-auth"
-public_key = "/etc/m6/auth.pub"
+backend = "m6-auth-check"
+
+[genid]
+read_require  = "role:genid-read"
+write_require = "role:genid-write"
 TOML
 chown root:m6 /etc/m6/my-blog.toml
 chmod 640 /etc/m6/my-blog.toml
 ```
 
-m6-http does not watch the certificate files, so a renewal has to touch the system config after it writes them.
-This hook does it, and certbot runs it after each renewal:
+systemd copies the certificate and key into m6-http's credential directory when the unit starts, so the hook restarts m6-http after each renewal:
 
 ```bash
-# /etc/letsencrypt/renewal-hooks/deploy/m6-touch.sh, mode 0755
+# /etc/letsencrypt/renewal-hooks/deploy/m6-http-restart.sh, mode 0755
 #!/bin/sh
-touch /etc/m6/my-blog.toml
+systemctl restart m6-http
 ```
 
-The touch is what makes m6-http read the new files, and until it runs m6-http keeps serving the previous certificate.
+Until it runs, m6-http keeps serving the previous certificate.
 
 ## Deploy the site directory
 
@@ -78,7 +80,6 @@ The touch is what makes m6-http read the new files, and until it runs m6-http ke
 # From your development machine
 rsync -av --delete \
   --exclude 'content/drafts/' \
-  --exclude 'data/auth.db' \
   --exclude 'keys/' \
   examples/05-cms/ \
   user@example.com:/var/www/my-blog/
@@ -87,7 +88,7 @@ rsync -av --delete \
 chown -R m6:m6 /var/www/my-blog
 ```
 
-`content/posts/` (published posts), `data/auth.db`, and `keys/` are excluded — these live exclusively on the server.
+`content/posts/` (published posts) and `keys/` are excluded — these live exclusively on the server.
 
 ## Unit files
 
@@ -119,9 +120,10 @@ Type=simple
 User=m6
 Group=m6
 
-# Creates /run/m6/ with correct ownership; removes it on stop
+# Creates /run/m6/ with correct ownership and keeps it across restarts
 RuntimeDirectory=m6
 RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
 
 ExecStart=/usr/local/bin/m6-html \
     /var/www/my-blog \
@@ -158,6 +160,7 @@ User=m6
 Group=m6
 RuntimeDirectory=m6
 RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
 
 ExecStart=/usr/local/bin/m6-file \
     /var/www/my-blog \
@@ -191,10 +194,16 @@ User=m6
 Group=m6
 RuntimeDirectory=m6
 RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
 
-ExecStart=/usr/local/bin/m6-auth \
+ExecStart=/usr/local/bin/m6-auth-server \
     /var/www/my-blog \
-    /var/www/my-blog/configs/m6-auth.conf
+    /etc/m6/m6-auth.conf
+
+LoadCredential=auth.pem:/etc/m6/auth.pem
+LoadCredential=auth.pub:/etc/m6/auth.pub
+StateDirectory=m6-auth
+StateDirectoryMode=0700
 
 Restart=on-failure
 RestartSec=2
@@ -204,14 +213,14 @@ SyslogIdentifier=m6-auth
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/run/m6 /var/www/my-blog/data
+ReadWritePaths=/run/m6
 ReadOnlyPaths=/var/www/my-blog /etc/m6
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-`ReadWritePaths` includes `/var/www/my-blog/data` — m6-auth writes the SQLite database there.
+m6-auth's keys come from the two `LoadCredential` lines, and its database lives in `/var/lib/m6-auth`, which `StateDirectory=m6-auth` creates.
 
 ### `/etc/systemd/system/render-cms.service`
 
@@ -226,10 +235,14 @@ User=m6
 Group=m6
 RuntimeDirectory=m6
 RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
 
 ExecStart=/var/www/my-blog/bin/render-cms \
     /var/www/my-blog \
     /var/www/my-blog/configs/render-cms.conf
+
+# The token that lets render-cms publish with POST /genid
+LoadCredential=genid-write.token:/etc/m6/genid-write.token
 
 Restart=on-failure
 RestartSec=2
@@ -262,8 +275,18 @@ User=m6
 Group=m6
 RuntimeDirectory=m6
 RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
+
+WorkingDirectory=/var/www/my-blog
 
 ExecStart=/usr/local/bin/m6-http /var/www/my-blog /etc/m6/my-blog.toml
+
+LoadCredential=tls-cert.pem:/etc/letsencrypt/live/example.com/fullchain.pem
+LoadCredential=tls-key.pem:/etc/letsencrypt/live/example.com/privkey.pem
+
+# The source node writes the site's generation ID here
+StateDirectory=m6-http
+StateDirectoryMode=0700
 
 Restart=on-failure
 RestartSec=2
@@ -276,14 +299,16 @@ AmbientCapabilities=CAP_NET_BIND_SERVICE
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/run/m6
-ReadOnlyPaths=/var/www/my-blog /etc/letsencrypt /etc/m6
+ReadWritePaths=/run/m6 /var/www/my-blog/logs
+ReadOnlyPaths=/var/www/my-blog /etc/m6
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-`After=` expresses preference, not a hard dependency. m6-http starts after renderers but handles missing backends gracefully — the socket pool backoff mechanism covers the brief window between m6-http binding and all renderers being ready.
+`After=` orders the start: m6-http expands each pool's socket glob once, at start, and a glob that matches no socket stops it with exit 2, so the backends must have bound their sockets first. m6-auth-server binds two sockets, `m6-auth.sock` for login and `check-m6-auth.sock` for the token check m6-http asks on every protected route and on `/genid`.
+
+The `render-cms` unit delivers the publisher token, and its `[genid]` table (in `render-cms.conf`, or in a `secrets_file`) names `/run/credentials/render-cms.service/genid-write.token`, the public URL and `connect = "127.0.0.1:443"`. Production leaves `ca_file` out, so the system's certificate store is trusted. Mint the token as the guide on publishing describes: `m6-auth-cli /etc/m6/m6-auth.conf user add publisher --role genid-write ...` and `token create publisher`.
 
 ## Install and start
 
@@ -338,11 +363,11 @@ journalctl -u m6-http --since "2024-01-15 09:00" --until "2024-01-15 10:00"
 ## Deploy updates
 
 ```bash
-# Template or config changes — rsync and done
-# m6-http detects site.toml change via inotify and reloads
+# Template, data or content changes — rsync, then publish
+# m6 reads its files at start, so the site is told to read them again with one
+# POST /genid (loopback, with the publisher token); a site.toml edit needs a restart
 rsync -av --delete \
   --exclude 'content/drafts/' \
-  --exclude 'data/auth.db' \
   --exclude 'keys/' \
   examples/05-cms/ user@example.com:/var/www/my-blog/
 
@@ -350,16 +375,15 @@ rsync -av --delete \
 cargo build --release -p render-cms
 rsync target/release/render-cms user@example.com:/var/www/my-blog/bin/
 ssh user@example.com systemctl restart render-cms
-# m6-http detects socket reappear and resumes routing — other units unaffected
+# m6-http connects to the socket again on its next turn — other units unaffected
 
-# TLS cert renewal — certbot's deploy hook touches the system config
-# m6-http reads the new certificate on the touch and reloads TLS context — no restart needed
+# TLS cert renewal — certbot's deploy hook restarts m6-http
 certbot renew
 ```
 
 ## Horizontal scaling
 
-Add a second m6-html instance with zero config change to m6-http:
+Add a second m6-html instance with no change to the site config:
 
 ```bash
 # Create a second config (content identical to m6-html.conf)
@@ -376,20 +400,22 @@ systemctl enable m6-html-2
 systemctl start  m6-html-2
 
 # /run/m6/m6-html-2.sock appears
-# m6-http detects it via inotify — adds to pool within milliseconds
-# Traffic now load-balanced across both instances (least-connections)
+# m6-http expands the pool's glob at start, so restart it to add the member
+systemctl restart m6-http
+# Traffic now goes to both instances in turn (round robin)
 ```
 
 Scale back down:
 
 ```bash
 systemctl stop m6-html-2
-# Socket disappears — m6-http removes from pool immediately
+# A request that finds the socket gone tries the next member, so one refused
+# connect is the whole cost until the next m6-http restart drops it
 ```
 
 ## Crash recovery
 
-`Restart=on-failure` with `RestartSec=2` handles crashes automatically. During the 2-second restart window, m6-http's pool backoff returns 503 for affected routes. When the socket reappears, m6-http resumes normal routing.
+`Restart=on-failure` with `RestartSec=2` handles crashes automatically. During the 2-second restart window a request to that pool tries the next member, and the client gets a 502 only when every member has failed. A backend that restarts on the same socket path serves again on its next turn.
 
 ```bash
 # Simulate a crash

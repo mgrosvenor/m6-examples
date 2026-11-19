@@ -5,7 +5,7 @@
 # Cache nodes do not enforce auth themselves — they proxy auth headers through
 # to the origin, which validates them. This is safe because:
 #   - Cache nodes are on a private WireGuard network (production)
-#   - CMS routes are cache = "no-store", always forwarded to origin
+#   - CMS routes are always forwarded to origin
 #   - The origin is the only place that checks JWTs and writes state
 
 [site]
@@ -17,7 +17,6 @@ mode = "internal"
 
 [log]
 level  = "info"
-format = "text"
 
 # ── Backend — origin H2C (local dev) ──────────────────────────────────────────
 
@@ -73,45 +72,37 @@ backend = "origin"
 path    = "/auth/refresh"
 backend = "origin"
 
-# ── CMS — always forwarded to origin, never cached ────────────────────────────
+# ── CMS — always forwarded to origin ────────────────────────────
 # Auth is enforced by the origin. Cache nodes pass all headers through.
 
 [[route]]
 path    = "/cms"
 backend = "origin"
-cache   = "no-store"
 
 [[route]]
 path    = "/cms/edit/{stem}"
 backend = "origin"
-cache   = "no-store"
 
 [[route]]
 path    = "/cms/new"
 backend = "origin"
-cache   = "no-store"
 
 [[route]]
 path    = "/api/drafts"
 backend = "origin"
-cache   = "no-store"
 
 [[route]]
 path    = "/api/drafts/{stem}"
 backend = "origin"
-cache   = "no-store"
 
 [[route]]
 path    = "/api/publish/{stem}"
 backend = "origin"
-cache   = "no-store"
 
 [[route]]
 path    = "/api/unpublish/{stem}"
 backend = "origin"
-cache   = "no-store"
 
 [[route]]
 path    = "/api/posts/{stem}"
 backend = "origin"
-cache   = "no-store"

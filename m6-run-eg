@@ -3,11 +3,11 @@
 #
 # Usage:
 #   m6-run-eg                           interactive prompt
-#   m6-run-eg <N>                       start example N, or reload config if already running
+#   m6-run-eg <N>                       start example N, or restart it if already running
 #   m6-run-eg <N> start                 start example N
 #   m6-run-eg <N> restart               kill all services, then start fresh
-#   m6-run-eg <N> rebuild               run make/cargo build, then touch site.toml
-#   m6-run-eg <N> reload                touch site.toml only (no build, no restart)
+#   m6-run-eg <N> rebuild               run make/cargo build, then restart
+#   m6-run-eg <N> reload                restart without a build, so every service reads its files again
 #   m6-run-eg <N> stop                  stop example N
 #
 # Flags (can appear anywhere):
@@ -195,7 +195,7 @@ start_eg() {
     # Run setup.sh if present and not yet completed (detected by absence of keys/ or data/).
     if [ -f "$dir/setup.sh" ]; then
         local needs_setup=0
-        [ ! -f "$dir/keys/auth.pem" ] && needs_setup=1
+        [ ! -f /tmp/m6/dev/auth.pem ] && needs_setup=1
         [ ! -d "$dir/data" ] && needs_setup=1
         if [ "$needs_setup" -eq 1 ]; then
             echo "running setup.sh for example $num..."
@@ -287,17 +287,14 @@ open_browser() {
     fi
 }
 
-# Touch site.toml to trigger m6-html hot-reload (no rebuild, no restart).
+# m6 services read their configuration, site.toml, templates and data once, at
+# start, and a touch of site.toml reloads nothing. To read new files, restart.
 reload_eg() {
-    local dir
-    dir=$(find_eg_dir "$1")
-    local toml="$dir/site.toml"
-    [ -f "$toml" ] || { echo "no site.toml in $dir — nothing to reload"; return; }
-    touch "$toml"
-    echo "reloaded: touched $toml"
+    kill_eg "$1"
+    start_eg "$1"
 }
 
-# Rebuild the example (Makefile, cargo package, or no-op), then reload.
+# Rebuild the example (Makefile, cargo package, or no-op), then restart.
 rebuild_eg() {
     local dir
     dir=$(find_eg_dir "$1")
@@ -327,7 +324,7 @@ rebuild_eg() {
         echo "nothing to build in $(basename "$dir")"
     fi
 
-    # Always reload config after a rebuild.
+    # Always restart after a rebuild, so the new binaries and files are read.
     reload_eg "$1"
 }
 
@@ -399,7 +396,7 @@ fi
 re='^[0-9]+$'
 [[ "$NUM" =~ $re ]] || die "example number must be a digit, got: $NUM"
 
-# Default: start if stopped, reload if running.
+# Default: start if stopped, restart if running.
 if [ -z "$ACTION" ]; then
     pg=$(running_pgid "$NUM" 2>/dev/null || echo "")
     if [ -n "$pg" ]; then

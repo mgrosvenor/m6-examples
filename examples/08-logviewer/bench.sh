@@ -24,19 +24,8 @@ info "Building m6 binaries..."
 (cd "$M6" && cargo build --release --quiet)
 export PATH="$M6/target/release:$PATH"
 
-# ── TLS certs ─────────────────────────────────────────────────────────────────
-mkdir -p "$SITE/keys"
-if [[ ! -f "$SITE/keys/dev.pem" ]]; then
-    info "Generating dev TLS certs..."
-    if ! command -v mkcert &>/dev/null; then
-        echo "ERROR: mkcert not found. Install with: brew install mkcert" >&2
-        exit 1
-    fi
-    mkcert -install 2>/dev/null || true
-    mkcert -key-file "$SITE/keys/dev-key.pem" \
-           -cert-file "$SITE/keys/dev.pem" \
-           localhost 127.0.0.1
-fi
+# Development keys, written by examples/dev-keys.sh into /tmp/m6/dev.
+"$SITE/../dev-keys.sh"
 
 # ── Start stack (if not already listening) ────────────────────────────────────
 STACK_STARTED=false

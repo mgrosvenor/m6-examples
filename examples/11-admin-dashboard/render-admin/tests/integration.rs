@@ -49,11 +49,14 @@ mod perf_tests {
     #[test]
     fn non_stats_lines_are_ignored() {
         let dir = tmp();
-        let path = write_log(&dir, &[
-            r#"{"timestamp":"2024-01-01T00:00:00Z","level":"DEBUG","fields":{"message":"request complete","path":"/","latency_ns":42000},"target":"m6_http"}"#,
-            r#"{"timestamp":"2024-01-01T00:00:00Z","level":"INFO","fields":{"message":"m6-render started","routes":3},"target":"m6_http"}"#,
-            r#"not json at all"#,
-        ]);
+        let path = write_log(
+            &dir,
+            &[
+                r#"{"timestamp":"2024-01-01T00:00:00Z","level":"DEBUG","fields":{"message":"request complete","path":"/","latency_ns":42000},"target":"m6_http"}"#,
+                r#"{"timestamp":"2024-01-01T00:00:00Z","level":"INFO","fields":{"message":"m6-render started","routes":3},"target":"m6_http"}"#,
+                r#"not json at all"#,
+            ],
+        );
         let v = perf_blob(&path, 60);
         assert!(v["history"].as_array().unwrap().is_empty());
     }
@@ -61,11 +64,14 @@ mod perf_tests {
     #[test]
     fn periodic_stats_are_parsed() {
         let dir = tmp();
-        let path = write_log(&dir, &[
-            r#"{"timestamp":"2024-01-01T00:00:00Z","level":"DEBUG","fields":{"message":"request complete","latency_ns":10000},"target":"m6_http"}"#,
-            r#"{"timestamp":"2024-01-01T00:00:00Z","level":"INFO","fields":{"message":"periodic stats","rps_avg":100,"rps_peak":200,"cache_hits":80,"cache_misses":20,"cache_hit_rate":0.8,"backend_errors":0,"pool_members":4,"hit_p50_ns":500000,"miss_p50_ns":2000000},"target":"m6_http"}"#,
-            r#"{"timestamp":"2024-01-01T00:00:10Z","level":"INFO","fields":{"message":"periodic stats","rps_avg":150,"rps_peak":300,"cache_hits":90,"cache_misses":10,"cache_hit_rate":0.9,"backend_errors":0,"pool_members":4,"hit_p50_ns":400000,"miss_p50_ns":1500000},"target":"m6_http"}"#,
-        ]);
+        let path = write_log(
+            &dir,
+            &[
+                r#"{"timestamp":"2024-01-01T00:00:00Z","level":"DEBUG","fields":{"message":"request complete","latency_ns":10000},"target":"m6_http"}"#,
+                r#"{"timestamp":"2024-01-01T00:00:00Z","level":"INFO","fields":{"message":"periodic stats","rps_avg":100,"rps_peak":200,"cache_hits":80,"cache_misses":20,"cache_hit_rate":0.8,"backend_errors":0,"pool_members":4,"hit_p50_ns":500000,"miss_p50_ns":2000000},"target":"m6_http"}"#,
+                r#"{"timestamp":"2024-01-01T00:00:10Z","level":"INFO","fields":{"message":"periodic stats","rps_avg":150,"rps_peak":300,"cache_hits":90,"cache_misses":10,"cache_hit_rate":0.9,"backend_errors":0,"pool_members":4,"hit_p50_ns":400000,"miss_p50_ns":1500000},"target":"m6_http"}"#,
+            ],
+        );
         let v = perf_blob(&path, 60);
         let history = v["history"].as_array().unwrap();
         assert_eq!(history.len(), 2);
@@ -78,12 +84,26 @@ mod perf_tests {
     #[test]
     fn all_fields_present_in_periodic_stats() {
         let dir = tmp();
-        let path = write_log(&dir, &[
-            r#"{"timestamp":"2024-01-01T00:00:00Z","level":"INFO","fields":{"message":"periodic stats","rps_avg":100,"rps_peak":200,"cache_hits":80,"cache_misses":20,"cache_hit_rate":0.8,"backend_errors":1,"pool_members":4,"hit_p0_ns":100,"hit_p50_ns":500000,"hit_p99_ns":1000000,"hit_max_ns":2000000,"miss_p0_ns":200,"miss_p50_ns":2000000,"miss_p99_ns":4000000,"miss_max_ns":5000000},"target":"m6_http"}"#,
-        ]);
+        let path = write_log(
+            &dir,
+            &[
+                r#"{"timestamp":"2024-01-01T00:00:00Z","level":"INFO","fields":{"message":"periodic stats","rps_avg":100,"rps_peak":200,"cache_hits":80,"cache_misses":20,"cache_hit_rate":0.8,"backend_errors":1,"pool_members":4,"hit_p0_ns":100,"hit_p50_ns":500000,"hit_p99_ns":1000000,"hit_max_ns":2000000,"miss_p0_ns":200,"miss_p50_ns":2000000,"miss_p99_ns":4000000,"miss_max_ns":5000000},"target":"m6_http"}"#,
+            ],
+        );
         let v = perf_blob(&path, 60);
         let entry = &v["history"].as_array().unwrap()[0];
-        for key in &["ts","rps_avg","rps_peak","cache_hits","cache_misses","cache_hit_rate","backend_errors","pool_members","hit_p50_ns","miss_p50_ns"] {
+        for key in &[
+            "ts",
+            "rps_avg",
+            "rps_peak",
+            "cache_hits",
+            "cache_misses",
+            "cache_hit_rate",
+            "backend_errors",
+            "pool_members",
+            "hit_p50_ns",
+            "miss_p50_ns",
+        ] {
             assert!(!entry[key].is_null(), "missing field: {key}");
         }
         assert_eq!(entry["backend_errors"], 1);
@@ -120,7 +140,9 @@ mod routes_tests {
     fn write_log(dir: &TempDir, lines: &[&str]) -> std::path::PathBuf {
         let p = dir.path().join("m6.log");
         let mut f = fs::File::create(&p).unwrap();
-        for line in lines { writeln!(f, "{}", line).unwrap(); }
+        for line in lines {
+            writeln!(f, "{}", line).unwrap();
+        }
         p
     }
 
@@ -144,13 +166,16 @@ mod routes_tests {
     #[test]
     fn aggregates_per_path() {
         let dir = tmp();
-        let path = write_log(&dir, &[
-            r#"{"timestamp":"2024-01-01T00:00:00Z","level":"DEBUG","fields":{"message":"request complete","path":"/","status":200,"cache_hit":true,"latency_ns":100000},"target":"m6_http"}"#,
-            r#"{"timestamp":"2024-01-01T00:00:00Z","level":"DEBUG","fields":{"message":"request complete","path":"/","status":200,"cache_hit":true,"latency_ns":200000},"target":"m6_http"}"#,
-            r#"{"timestamp":"2024-01-01T00:00:00Z","level":"DEBUG","fields":{"message":"request complete","path":"/blog","status":200,"cache_hit":false,"latency_ns":300000},"target":"m6_http"}"#,
-            r#"{"timestamp":"2024-01-01T00:00:00Z","level":"DEBUG","fields":{"message":"request complete","path":"/blog","status":200,"cache_hit":true,"latency_ns":400000},"target":"m6_http"}"#,
-            r#"{"timestamp":"2024-01-01T00:00:00Z","level":"INFO","fields":{"message":"periodic stats","rps_avg":10},"target":"m6_http"}"#,
-        ]);
+        let path = write_log(
+            &dir,
+            &[
+                r#"{"timestamp":"2024-01-01T00:00:00Z","level":"DEBUG","fields":{"message":"request complete","path":"/","status":200,"cache_hit":true,"latency_ns":100000},"target":"m6_http"}"#,
+                r#"{"timestamp":"2024-01-01T00:00:00Z","level":"DEBUG","fields":{"message":"request complete","path":"/","status":200,"cache_hit":true,"latency_ns":200000},"target":"m6_http"}"#,
+                r#"{"timestamp":"2024-01-01T00:00:00Z","level":"DEBUG","fields":{"message":"request complete","path":"/blog","status":200,"cache_hit":false,"latency_ns":300000},"target":"m6_http"}"#,
+                r#"{"timestamp":"2024-01-01T00:00:00Z","level":"DEBUG","fields":{"message":"request complete","path":"/blog","status":200,"cache_hit":true,"latency_ns":400000},"target":"m6_http"}"#,
+                r#"{"timestamp":"2024-01-01T00:00:00Z","level":"INFO","fields":{"message":"periodic stats","rps_avg":10},"target":"m6_http"}"#,
+            ],
+        );
         let v = routes_blob(&path, 1000);
         assert_eq!(v["sample_requests"], 4);
 
@@ -159,13 +184,13 @@ mod routes_tests {
         assert_eq!(routes.len(), 2);
 
         let root = routes.iter().find(|r| r["path"] == "/").unwrap();
-        assert_eq!(root["requests"],   2);
+        assert_eq!(root["requests"], 2);
         assert_eq!(root["cache_hits"], 2);
         assert_eq!(root["cache_misses"], 0);
         assert_eq!(root["avg_latency_ns"], 150000);
 
         let blog = routes.iter().find(|r| r["path"] == "/blog").unwrap();
-        assert_eq!(blog["cache_hits"],   1);
+        assert_eq!(blog["cache_hits"], 1);
         assert_eq!(blog["cache_misses"], 1);
         assert_eq!(blog["avg_latency_ns"], 350000);
     }
@@ -207,27 +232,38 @@ mod routes_tests {
     #[test]
     fn hit_rate_calculated_correctly() {
         let dir = tmp();
-        let path = write_log(&dir, &[
-            r#"{"timestamp":"2024-01-01T00:00:00Z","level":"DEBUG","fields":{"message":"request complete","path":"/x","cache_hit":true,"latency_ns":1000},"target":"m6_http"}"#,
-            r#"{"timestamp":"2024-01-01T00:00:00Z","level":"DEBUG","fields":{"message":"request complete","path":"/x","cache_hit":true,"latency_ns":1000},"target":"m6_http"}"#,
-            r#"{"timestamp":"2024-01-01T00:00:00Z","level":"DEBUG","fields":{"message":"request complete","path":"/x","cache_hit":false,"latency_ns":1000},"target":"m6_http"}"#,
-            r#"{"timestamp":"2024-01-01T00:00:00Z","level":"DEBUG","fields":{"message":"request complete","path":"/x","cache_hit":false,"latency_ns":1000},"target":"m6_http"}"#,
-        ]);
+        let path = write_log(
+            &dir,
+            &[
+                r#"{"timestamp":"2024-01-01T00:00:00Z","level":"DEBUG","fields":{"message":"request complete","path":"/x","cache_hit":true,"latency_ns":1000},"target":"m6_http"}"#,
+                r#"{"timestamp":"2024-01-01T00:00:00Z","level":"DEBUG","fields":{"message":"request complete","path":"/x","cache_hit":true,"latency_ns":1000},"target":"m6_http"}"#,
+                r#"{"timestamp":"2024-01-01T00:00:00Z","level":"DEBUG","fields":{"message":"request complete","path":"/x","cache_hit":false,"latency_ns":1000},"target":"m6_http"}"#,
+                r#"{"timestamp":"2024-01-01T00:00:00Z","level":"DEBUG","fields":{"message":"request complete","path":"/x","cache_hit":false,"latency_ns":1000},"target":"m6_http"}"#,
+            ],
+        );
         let v = routes_blob(&path, 1000);
         let routes = v["routes"].as_array().unwrap();
         let hit_rate = routes[0]["hit_rate"].as_f64().unwrap();
-        assert!((hit_rate - 0.5).abs() < 0.001, "expected 0.5, got {hit_rate}");
+        assert!(
+            (hit_rate - 0.5).abs() < 0.001,
+            "expected 0.5, got {hit_rate}"
+        );
     }
 
     #[test]
     fn sample_window_secs_computed_from_timestamps() {
         let dir = tmp();
-        let path = write_log(&dir, &[
-            r#"{"timestamp":"2024-01-01T00:00:00Z","level":"DEBUG","fields":{"message":"request complete","path":"/","cache_hit":false,"latency_ns":1000},"target":"m6_http"}"#,
-            r#"{"timestamp":"2024-01-01T00:01:00Z","level":"DEBUG","fields":{"message":"request complete","path":"/","cache_hit":false,"latency_ns":1000},"target":"m6_http"}"#,
-        ]);
+        let path = write_log(
+            &dir,
+            &[
+                r#"{"timestamp":"2024-01-01T00:00:00Z","level":"DEBUG","fields":{"message":"request complete","path":"/","cache_hit":false,"latency_ns":1000},"target":"m6_http"}"#,
+                r#"{"timestamp":"2024-01-01T00:01:00Z","level":"DEBUG","fields":{"message":"request complete","path":"/","cache_hit":false,"latency_ns":1000},"target":"m6_http"}"#,
+            ],
+        );
         let v = routes_blob(&path, 1000);
-        let window = v["sample_window_secs"].as_u64().expect("sample_window_secs should be a number");
+        let window = v["sample_window_secs"]
+            .as_u64()
+            .expect("sample_window_secs should be a number");
         assert_eq!(window, 60, "expected 60s window, got {window}");
     }
 
@@ -235,21 +271,30 @@ mod routes_tests {
     fn sample_window_secs_null_without_timestamps() {
         let dir = tmp();
         // Entries without timestamp fields — window must be null.
-        let path = write_log(&dir, &[
-            r#"{"level":"DEBUG","fields":{"message":"request complete","path":"/","cache_hit":false,"latency_ns":1000},"target":"m6_http"}"#,
-            r#"{"level":"DEBUG","fields":{"message":"request complete","path":"/","cache_hit":false,"latency_ns":1000},"target":"m6_http"}"#,
-        ]);
+        let path = write_log(
+            &dir,
+            &[
+                r#"{"level":"DEBUG","fields":{"message":"request complete","path":"/","cache_hit":false,"latency_ns":1000},"target":"m6_http"}"#,
+                r#"{"level":"DEBUG","fields":{"message":"request complete","path":"/","cache_hit":false,"latency_ns":1000},"target":"m6_http"}"#,
+            ],
+        );
         let v = routes_blob(&path, 1000);
-        assert!(v["sample_window_secs"].is_null(), "expected null when no timestamps present");
+        assert!(
+            v["sample_window_secs"].is_null(),
+            "expected null when no timestamps present"
+        );
     }
 
     #[test]
     fn zero_latency_entries_do_not_panic() {
         // All zero latency_ns values — avg should be 0.
         let dir = tmp();
-        let path = write_log(&dir, &[
-            r#"{"timestamp":"2024-01-01T00:00:00Z","level":"DEBUG","fields":{"message":"request complete","path":"/","cache_hit":false,"latency_ns":0},"target":"m6_http"}"#,
-        ]);
+        let path = write_log(
+            &dir,
+            &[
+                r#"{"timestamp":"2024-01-01T00:00:00Z","level":"DEBUG","fields":{"message":"request complete","path":"/","cache_hit":false,"latency_ns":0},"target":"m6_http"}"#,
+            ],
+        );
         let v = routes_blob(&path, 1000);
         let routes = v["routes"].as_array().unwrap();
         assert_eq!(routes[0]["avg_latency_ns"], 0);
@@ -292,7 +337,10 @@ mod system_tests {
         let total = v["memory"]["total_bytes"].as_u64().unwrap_or(0);
         assert!(total > 0, "total memory should be > 0");
         let used = v["memory"]["used_bytes"].as_u64().unwrap_or(0);
-        assert!(used <= total, "used_bytes ({used}) should not exceed total_bytes ({total})");
+        assert!(
+            used <= total,
+            "used_bytes ({used}) should not exceed total_bytes ({total})"
+        );
     }
 
     #[test]
@@ -318,7 +366,11 @@ mod backends_tests {
     fn backends_reports_the_bind_from_the_system_config() {
         let dir = tmp();
         let site = dir.path().join("site.toml");
-        fs::write(&site, "[site]\nname = \"s\"\n\n[[backend]]\nname = \"api\"\n").unwrap();
+        fs::write(
+            &site,
+            "[site]\nname = \"s\"\n\n[[backend]]\nname = \"api\"\n",
+        )
+        .unwrap();
         let system = dir.path().join("system.toml");
         fs::write(&system, "[server]\nbind = \"192.0.2.10:8444\"\n").unwrap();
         let log = dir.path().join("empty.log");
@@ -363,7 +415,8 @@ mod bench_tests {
         for t in &targets {
             assert_eq!(t["addr"].as_str().unwrap(), "127.0.0.1:8444");
         }
-        let protos: Vec<&str> = targets.iter()
+        let protos: Vec<&str> = targets
+            .iter()
             .map(|t| t["proto"].as_str().unwrap())
             .collect();
         assert!(protos.contains(&"h1"));
@@ -394,61 +447,187 @@ mod bench_tests {
         assert!(poll_job(&store, "no-such-id").is_none());
     }
 
+    // A running bench is reaped from its child's exit descriptor (`ChildExit`:
+    // a pidfd on Linux, a kqueue on macOS). The tests below drive a real child
+    // the way the service loop does: the output pipe and the exit descriptor on
+    // their own tokens, plus one socket as another request the loop must keep
+    // serving.
+
+    #[test]
+    fn a_bench_child_that_closes_stdout_does_not_stop_the_loop() {
+        child::a_silent_child_does_not_stop_the_loop();
+    }
+
+    #[test]
+    fn a_bench_child_that_exits_nonzero_reports_that_status() {
+        child::a_failing_child_reports_its_status();
+    }
+
     #[test]
     fn start_bench_with_echo_produces_done_status() {
         // Use `echo` as a stand-in for m6-bench (exits 0, produces output).
-        let store = new_job_store();
-        let result = start_bench(
-            std::path::Path::new("echo"),
-            &store,
-            "127.0.0.1:9999",
-            "h1",
-            1,
-            1,
-        );
-        let job_id = result["job_id"].as_str().expect("job_id").to_string();
-
-        // Wait for the background thread to finish (max 3s).
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
-        loop {
-            let blob = poll_job(&store, &job_id).expect("job exists");
-            let status = blob["status"].as_str().unwrap_or("");
-            if status != "running" {
-                assert_eq!(status, "done", "expected done, got {status}");
-                break;
-            }
-            if std::time::Instant::now() > deadline {
-                panic!("job did not complete within 3s");
-            }
-            std::thread::sleep(std::time::Duration::from_millis(50));
-        }
+        child::echo_child_is_done();
     }
 
     #[test]
     fn start_bench_with_nonexistent_binary_produces_failed_status() {
-        let store = new_job_store();
-        let result = start_bench(
+        let mut store = new_job_store();
+        let (job_id, run) = start_bench(
             std::path::Path::new("/no-such-binary"),
-            &store,
+            &mut store,
             "127.0.0.1:9999",
             "h1",
             1,
             1,
         );
-        let job_id = result["job_id"].as_str().expect("job_id").to_string();
+        assert!(run.is_none(), "a binary that cannot start has no pipe");
 
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
-        loop {
+        let blob = poll_job(&store, &job_id).expect("job exists");
+        assert_eq!(blob["status"].as_str(), Some("failed"));
+        assert!(blob["output"]
+            .as_str()
+            .unwrap_or("")
+            .contains("failed to start m6-bench"));
+    }
+
+    mod child {
+        use super::*;
+        use m6_core::platform::{now, Events, Interest, Poll, Token};
+        use render_admin::bench::{bench_event, start_bench, BenchEvent, JobStore, Running};
+        use std::io::{Read, Write};
+        use std::os::fd::AsRawFd;
+        use std::os::unix::net::UnixStream;
+        use std::time::Duration;
+
+        const PIPE: Token = Token(0);
+        const EXIT: Token = Token(1);
+        const REQUEST: Token = Token(2);
+
+        // The child ignores the bench arguments and runs this shell body.
+        fn bench_script(dir: &TempDir, body: &str) -> std::path::PathBuf {
+            use std::os::unix::fs::PermissionsExt;
+            let path = dir.path().join("bench.sh");
+            fs::write(&path, format!("#!/bin/sh\n{body}\n")).expect("write the bench script");
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o755))
+                .expect("make the bench script executable");
+            path
+        }
+
+        // Drive a running bench the way the service loop does, with a socket
+        // registered beside it as the other request. The per-event work and
+        // the job's finish are `bench_event`, the function the service calls,
+        // so deleting its done check leaves the bench unfinished and this
+        // driver fails at its deadline. Returns whether the child had not yet
+        // been reported exited when that request was answered.
+        fn drive(run: Running, store: &mut JobStore) -> bool {
+            let (mut server, mut client) = UnixStream::pair().expect("a socket pair");
+            server
+                .set_nonblocking(true)
+                .expect("the server end is non-blocking");
+            client.write_all(b"?").expect("send the request");
+            let mut poll = Poll::new().expect("a poll");
+            let mut bench = Some(run);
+            let run = bench.as_ref().expect("the bench starts");
+            poll.registry()
+                .register_fd(run.pipe_fd(), PIPE, Interest::READABLE)
+                .expect("register the bench pipe");
+            poll.registry()
+                .register_fd(run.exit_fd(), EXIT, Interest::READABLE)
+                .expect("register the exit descriptor");
+            poll.registry()
+                .register_fd(server.as_raw_fd(), REQUEST, Interest::READABLE)
+                .expect("register the request");
+            let mut events = Events::with_capacity(8);
+            let mut buf = [0u8; 1024];
+            let deadline = now() + Duration::from_secs(10);
+            let mut served = false;
+            let mut exited = false;
+            let mut served_while_running = false;
+            loop {
+                let left = deadline
+                    .checked_duration_since(now())
+                    .expect("the bench and its request finish within 10 s");
+                poll.poll(&mut events, Some(left)).expect("poll");
+                for ev in &events {
+                    match ev.token() {
+                        PIPE => {
+                            bench_event(&mut bench, store, &poll, BenchEvent::Pipe(&mut buf))
+                                .expect("read the bench output");
+                        }
+                        EXIT => {
+                            exited = true;
+                            bench_event(&mut bench, store, &poll, BenchEvent::Exit)
+                                .expect("reap the bench child");
+                        }
+                        REQUEST => {
+                            let n = server.read(&mut buf).expect("read the request");
+                            assert!(n > 0, "the request carries one byte");
+                            server.write_all(b"ok").expect("answer the request");
+                            served_while_running = !exited;
+                            served = true;
+                        }
+                        token => panic!("unexpected token {token:?}"),
+                    }
+                }
+                if served && bench.is_none() {
+                    poll.registry()
+                        .deregister_fd(server.as_raw_fd())
+                        .expect("deregister the request");
+                    break;
+                }
+            }
+            served_while_running
+        }
+
+        fn start(script: &std::path::Path) -> (String, Running, JobStore) {
+            let mut store = new_job_store();
+            let (job_id, run) = start_bench(script, &mut store, "127.0.0.1:9999", "h1", 1, 1);
+            (job_id, run.expect("the bench script starts"), store)
+        }
+
+        pub(super) fn a_silent_child_does_not_stop_the_loop() {
+            let dir = tmp();
+            // The child closes its stdout at once and then sleeps: end of file
+            // arrives while the child is alive, so the loop must keep serving.
+            let script = bench_script(&dir, "exec 1>&-\nsleep 2\nexit 0");
+            let (job_id, run, mut store) = start(&script);
+            let served_while_running = drive(run, &mut store);
+            assert!(
+                served_while_running,
+                "the loop answered another request while the bench child was still running"
+            );
+
             let blob = poll_job(&store, &job_id).expect("job exists");
-            let status = blob["status"].as_str().unwrap_or("");
-            if status != "running" {
-                assert_eq!(status, "failed");
-                break;
-            }
-            if std::time::Instant::now() > deadline {
-                panic!("job did not complete within 3s");
-            }
-            std::thread::sleep(std::time::Duration::from_millis(50));
+            assert_eq!(blob["status"].as_str(), Some("done"), "job: {blob}");
+            assert_eq!(blob["output"].as_str(), Some(""));
+        }
+
+        pub(super) fn a_failing_child_reports_its_status() {
+            let dir = tmp();
+            let script = bench_script(&dir, "echo boom\nexit 7");
+            let (job_id, run, mut store) = start(&script);
+            drive(run, &mut store);
+
+            let blob = poll_job(&store, &job_id).expect("job exists");
+            assert_eq!(blob["status"].as_str(), Some("failed"), "job: {blob}");
+            assert_eq!(blob["output"].as_str(), Some("boom\n"));
+        }
+
+        pub(super) fn echo_child_is_done() {
+            let mut store = new_job_store();
+            let (job_id, run) = start_bench(
+                std::path::Path::new("echo"),
+                &mut store,
+                "127.0.0.1:9999",
+                "h1",
+                1,
+                1,
+            );
+            let run = run.expect("echo starts");
+            drive(run, &mut store);
+
+            let blob = poll_job(&store, &job_id).expect("job exists");
+            assert_eq!(blob["status"].as_str(), Some("done"));
         }
     }
 }
@@ -531,7 +710,7 @@ mod logs_tests {
 
 mod ops_tests {
     use super::*;
-    use render_admin::ops::{config_read, config_touch, config_write, restart_service, ServiceConfig};
+    use render_admin::ops::{config_read, config_write, restart_service, ServiceConfig};
     use serde_json::json;
 
     fn write_toml(dir: &TempDir, content: &str) -> std::path::PathBuf {
@@ -639,31 +818,10 @@ mod ops_tests {
         config_write(&path, &cfg).expect("write should succeed");
 
         let read_back = config_read(&path);
-        let routes = read_back["config"]["route"].as_array().expect("route array");
+        let routes = read_back["config"]["route"]
+            .as_array()
+            .expect("route array");
         assert_eq!(routes.len(), 2);
-    }
-
-    // ── config_touch ─────────────────────────────────────────────────────────
-
-    #[test]
-    fn config_touch_updates_mtime() {
-        let dir = tmp();
-        let path = write_toml(&dir, "[server]\n");
-        let mtime_before = fs::metadata(&path).unwrap().modified().unwrap();
-
-        // Sleep briefly so touch has a different time to set
-        std::thread::sleep(std::time::Duration::from_millis(10));
-        config_touch(&path).expect("touch should succeed");
-
-        let mtime_after = fs::metadata(&path).unwrap().modified().unwrap();
-        assert!(mtime_after >= mtime_before, "mtime should not go backwards");
-    }
-
-    #[test]
-    fn config_touch_missing_file_returns_error() {
-        let dir = tmp();
-        let result = config_touch(&dir.path().join("no.toml"));
-        assert!(result.is_err());
     }
 
     // ── restart_service ──────────────────────────────────────────────────────

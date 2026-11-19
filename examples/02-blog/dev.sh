@@ -13,38 +13,10 @@ info "Building m6 binaries..."
 (cd "$M6" && cargo build --release --quiet)
 export PATH="$M6/target/release:$PATH"
 
-# ── TLS certs ─────────────────────────────────────────────────────────────────
-mkdir -p "$SITE/keys"
-if [[ ! -f "$SITE/keys/dev.pem" ]]; then
-    info "Generating dev TLS certs..."
-    if command -v mkcert &>/dev/null; then
-        mkcert -install 2>/dev/null || true
-        mkcert -key-file "$SITE/keys/dev-key.pem" \
-               -cert-file "$SITE/keys/dev.pem" \
-               localhost 127.0.0.1
-    elif command -v openssl &>/dev/null; then
-        # No mkcert: fall back to a self-signed certificate.
-        #
-        # The only thing mkcert adds is a local CA your browser already trusts,
-        # which matters to a person clicking around and not to `curl -k` or to a
-        # test suite. This used to be a hard `exit 1`, and m6's build host has no
-        # mkcert -- the CI stage that runs this example only worked because rsync
-        # happened to carry a developer's own untracked keys/ directory. A check
-        # that depends on an untracked file is not a check.
-        echo "mkcert not found; generating a self-signed certificate with openssl."
-        echo "Your browser will warn about it. For one it trusts: brew install mkcert"
-        openssl req -x509 -newkey rsa:2048 -sha256 -days 365 -nodes \
-            -keyout "$SITE/keys/dev-key.pem" -out "$SITE/keys/dev.pem" \
-            -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" 2>/dev/null \
-            || { echo "ERROR: openssl could not write a certificate." >&2; exit 1; }
-    else
-        echo "ERROR: neither mkcert nor openssl found. Install one:" >&2
-        echo "  mkcert   - certificate your browser trusts (brew install mkcert)" >&2
-        echo "  openssl  - self-signed, browser warns" >&2
-        exit 1
-    fi
-fi
+# Development keys, written by examples/dev-keys.sh into /tmp/m6/dev.
+"$SITE/../dev-keys.sh"
 
+# Run again after editing a post, then restart m6-html so it reads the new file.
 # ── Generate posts.json from Markdown (initial pass) ──────────────────────────
 if command -v m6-md &>/dev/null; then
     info "Generating posts.json..."
@@ -92,18 +64,7 @@ M6_SOCKET_OVERRIDE=/tmp/m6/m6-file.sock \
     m6-file "$SITE" "$SITE/configs/m6-file.conf" >> "$SITE/logs/m6-file.log" 2>&1 &
 FILE_PID=$!
 
-# Start m6-md in watch mode: re-generates posts.json on any .md save, then
-# touches site.toml so m6-http evicts and re-caches the affected pages.
-if command -v m6-md &>/dev/null; then
-    info "Starting m6-md (watch mode)..."
-    m6-md "$SITE/content/posts/" --output "$SITE/data/posts.json" \
-        --watch --touch "$SITE/site.toml" >> "$SITE/logs/m6-md.log" 2>&1 &
-    MD_PID=$!
-else
-    MD_PID=""
-fi
-
-trap 'echo ""; info "Stopping..."; kill $HTML_PID $FILE_PID ${MD_PID:-} $HTTP_PID 2>/dev/null; wait 2>/dev/null' EXIT
+trap 'echo ""; info "Stopping..."; kill $HTML_PID $FILE_PID $HTTP_PID 2>/dev/null; wait 2>/dev/null' EXIT
 
 # Wait for backend sockets
 echo -n "Waiting for backend sockets"
@@ -153,9 +114,8 @@ echo ""
 echo "  Logs:   $SITE/logs/m6-http.log"
 echo "          $SITE/logs/m6-html.log"
 echo "          $SITE/logs/m6-file.log"
-[ -n "${MD_PID:-}" ] && echo "          $SITE/logs/m6-md.log"
 echo ""
-echo "  PIDs:   m6-html=$HTML_PID  m6-file=$FILE_PID  m6-http=$HTTP_PID${MD_PID:+  m6-md=$MD_PID}"
+echo "  PIDs:   m6-html=$HTML_PID  m6-file=$FILE_PID  m6-http=$HTTP_PID"
 echo ""
 
 wait

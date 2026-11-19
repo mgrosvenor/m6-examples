@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# setup-origin.sh — first-time setup for the Sydney origin node.
+# setup-origin.sh — first-time setup for the origin node.
 # Run as root on a fresh Ubuntu 22.04 / Debian 12 VPS.
 set -euo pipefail
 
@@ -31,15 +31,40 @@ if [ ! -f /etc/m6/auth.pem ]; then
     openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -pkeyopt ec_param_enc:named_curve -out /etc/m6/auth.pem
     openssl pkey -in /etc/m6/auth.pem -pubout -out /etc/m6/auth.pub
     chmod 600 /etc/m6/auth.pem
-    chown m6:m6 /etc/m6/auth.pem /etc/m6/auth.pub
+    chmod 600 /etc/m6/auth.pub
 fi
 
+# m6-auth config. systemd reads a credential as root, so the two key files stay root's.
+cat > /etc/m6/m6-auth.conf << 'CONF'
+[storage]
+path = "/var/lib/m6-auth/auth.db"
+
+[tokens]
+issuer = "example.com"
+
+[keys]
+private_key = "/run/credentials/m6-auth.service/auth.pem"
+public_key  = "/run/credentials/m6-auth.service/auth.pub"
+CONF
+chown root:m6 /etc/m6/m6-auth.conf
+chmod 640 /etc/m6/m6-auth.conf
+sed -i "s/example.com/$DOMAIN/g" /etc/m6/m6-auth.conf
+
+# The origin is the source of the site's generation ID. A publish is one
+# `POST /genid` to it, with a token that has the genid-write role, and each cache
+# node follows the ID with a token that has the genid-read role. Once the auth
+# database exists (run the unit, then):
+#   m6-auth-cli /etc/m6/m6-auth.conf user add publisher --role genid-write --password "$(openssl rand -hex 16)"
+#   m6-auth-cli /etc/m6/m6-auth.conf user add reader    --role genid-read  --password "$(openssl rand -hex 16)"
+#   m6-auth-cli /etc/m6/m6-auth.conf token create publisher --name publish    # for the CMS renderer
+#   m6-auth-cli /etc/m6/m6-auth.conf token create reader --name read          # copy to /etc/m6/genid-read on each cache node
+
 # System config — one instance handles both public TLS and H2C backbone
-install -m 640 -o root -g m6 configs/sydney.toml /etc/m6/sydney.toml
-sed -i "s/example.com/$DOMAIN/g" /etc/m6/sydney.toml
+install -m 640 -o root -g m6 configs/origin.toml /etc/m6/origin.toml
+sed -i "s/example.com/$DOMAIN/g" /etc/m6/origin.toml
 
 echo "=== WireGuard ==="
-install -m 600 wireguard/sydney-wg0.conf /etc/wireguard/wg0.conf
+install -m 600 wireguard/origin-wg0.conf /etc/wireguard/wg0.conf
 systemctl enable --now wg-quick@wg0
 
 echo "=== Firewall ==="
@@ -59,16 +84,17 @@ ufw --force enable
 
 echo "=== TLS certificate ==="
 certbot certonly --standalone --agree-tos --email "$EMAIL" -d "$DOMAIN"
-# Auto-renewal hook — touch the system config so m6-http reads the new cert
+# Auto-renewal hook. systemd copies the new certificate into the unit when it starts, so this restart serves it.
 mkdir -p /etc/letsencrypt/renewal-hooks/deploy
-cat > /etc/letsencrypt/renewal-hooks/deploy/m6-http-reload.sh << 'HOOK'
+cat > /etc/letsencrypt/renewal-hooks/deploy/m6-http-restart.sh << 'HOOK'
 #!/bin/bash
-touch /etc/m6/sydney.toml
+systemctl restart m6-http-origin
 HOOK
-chmod +x /etc/letsencrypt/renewal-hooks/deploy/m6-http-reload.sh
+chmod +x /etc/letsencrypt/renewal-hooks/deploy/m6-http-restart.sh
 
 echo "=== Installing systemd units ==="
-install -m 644 systemd/m6-http-origin.service /etc/systemd/system/
+sed "s/example.com/$DOMAIN/g" systemd/m6-http-origin.service > /etc/systemd/system/m6-http-origin.service
+chmod 644 /etc/systemd/system/m6-http-origin.service
 # (Install m6-html, m6-file, m6-auth, render-cms units from example 06/07)
 systemctl daemon-reload
 

@@ -8,6 +8,7 @@ User=m6
 Group=m6
 RuntimeDirectory=m6
 RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
 
 ExecStart=/var/www/my-blog/bin/render-cms \
     /var/www/my-blog \

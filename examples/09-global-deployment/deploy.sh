@@ -109,7 +109,6 @@ echo "==> Syncing to origin ($ORIGIN)..."
 rsync -az --delete \
     $SSH_OPTS \
     --exclude 'content/drafts/' \
-    --exclude 'data/auth.db' \
     --exclude 'data/posts.json' \
     --exclude 'keys/' \
     --exclude '*.pem' \

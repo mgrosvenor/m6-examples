@@ -12,7 +12,7 @@ The problem is the seams. Every integration point is a configuration file in a d
 
 m6 is a different approach. It's an integrated system that thinks about the whole stack — from authoring pages in Markdown to writing bytes to a network socket — and handles all of it under one roof, with a single set of concepts, a single config format, and a unified model of how content moves from source to browser.
 
-The integration is what makes the developer experience simpler. It's also what makes the system fast: because the cache layer knows exactly which content files each URL depends on, it can evict precisely and immediately when content changes, with no TTLs and no wasted work. Because the rendering layer speaks directly to the cache layer's expectations, responses arrive already compressed and ready to serve. No adapter overhead, no translation, no impedance mismatch.
+The integration is what makes the developer experience simpler. It's also what makes the system fast: because the cache layer knows exactly which content files each URL depends on, it can drop every stale page in one step when content changes, with one number to track and nothing to match. Because the rendering layer speaks directly to the cache layer's expectations, responses arrive already compressed and ready to serve. No adapter overhead, no translation, no impedance mismatch.
 
 This is still a collection of small Unix processes. Each has one job. They communicate over Unix sockets. You wire them together with a config file. But the point isn't the processes — the point is that the whole journey, from the Markdown file on disk to the bytes on the wire, is a single coherent system.
 
@@ -43,9 +43,9 @@ m6-http also terminates TLS, enforces route-level authentication, and fetches st
 
 **m6-file** serves files from the filesystem. Similar socket convention to m6-html, but no templates, no params. Just path resolution with traversal protection and content-type detection.
 
-**m6-auth** issues and verifies JWTs, manages credentials and ACLs. m6-http verifies tokens locally using m6-auth's public key — no network hop per request. m6-auth is only called for credential operations: login, token refresh, logout, user and group management.
+**m6-auth** issues and verifies JWTs, manages credentials and ACLs. It listens on two sockets: the login socket for login, token refresh and logout, and a check socket that answers `POST /check`. m6-http asks the check socket who a caller is whenever a route has a `require`, so a role or group change takes effect without a new token. The check is one local socket round trip and only protected routes pay it.
 
-**User-supplied renderers** are ordinary HTTP/1.1+ servers. Declared as backends in `site.toml`. Managed by systemd. The m6-render Rust library makes writing them simple, but any language works.
+**User-supplied renderers** are ordinary HTTP/1.1+ servers. Declared as backends in `site.toml`. Managed by systemd. A Rust renderer links `m6-core`, which supplies the parts of a service (routing, the request dictionary, templates, the event-loop pieces) and leaves the loop and the handlers to the renderer, but any language works.
 
 ## Tiers
 
@@ -94,13 +94,13 @@ Cache miss path:
   request → route match → backend → render → compress → cache → write to socket
 ```
 
-**Cache key:** `(path, content-encoding)`. Query strings are stripped before lookup. Each encoding variant — brotli, gzip, identity — is cached independently. If a brotli-capable client is first, the brotli variant is cached. The next gzip-only client gets a fresh render, which is then cached as a separate entry.
+**Cache key:** `(path, query, content-encoding)`. Each encoding variant — brotli, gzip, identity — is cached independently. If a brotli-capable client is first, the brotli variant is cached. The next gzip-only client gets a fresh render, which is then cached as a separate entry.
 
-**What gets cached:** Responses with `Cache-Control: public`. `no-store` and `private` are not cached. 4xx and 5xx responses are never cached regardless of headers.
+**What gets cached:** Responses with `Cache-Control: public`. `no-store` and `private` are not cached. A 5xx and most 4xx responses are never cached, whatever their headers say.
 
-**Invalidation without TTLs:** m6-http builds an invalidation map at startup from data files to the URL paths that depend on them, derived from `params` declarations in renderer configs. When a data file changes on disk (detected via inotify), the map lookup gives m6-http exactly which cached URLs to evict — and only those. No sweep, no TTL expiry, no full-cache wipe.
+**Invalidation is one number.** A cached entry leaves the cache in one of four ways: a successful state-changing request evicts the entry for its own path, its freshness lifetime ends (a page with no explicit `max-age` lives at most 24 hours), the site's generation changes and empties the whole cache, or the process restarts. A change to a file behind a page therefore does not reach readers until the generation changes.
 
-`site.toml` is the sync point. Touching it triggers a full reload of routing, pool membership, the auth config, and the invalidation map. External tools that update content touch `site.toml` to signal m6-http. The cache is evicted for affected routes; everything else remains cached.
+The generation is a counter the source node owns. A publish is one `POST /genid` to m6-http: it reloads every backend on a Unix socket, flushes the cache and advances the counter, then answers with the new value. Tools that change content (a CMS renderer, a deploy script) send that request when they finish. There is no per-path map and nothing to keep in step with the files.
 
 ## Backend pools and socket discovery
 
@@ -112,7 +112,7 @@ name    = "m6-html"
 sockets = "/run/m6/m6-html-*.sock"
 ```
 
-m6-http watches `/run/m6/` via inotify. When a socket matching the glob appears, it's added to the pool. When it disappears, it's removed. Load balancing is least-connections across active pool members. Scaling up means starting a new systemd unit — no config change, no reload.
+m6-http expands the glob once, at start, so the backends start first (systemd `After=` on their units). Requests go to the pool's members in turn. A request whose connect fails tries the next member, and a backend that restarts on the same socket path serves again on its next turn. Scaling up means starting another instance on a new socket and restarting m6-http, with no change to the config.
 
 Backends are only contacted on cache misses. A well-configured site with stable content will see backends contacted rarely — once per content version, per URL.
 
@@ -127,11 +127,11 @@ backend = "m6-html"
 require = "group:admins"
 ```
 
-m6-http verifies the JWT locally using m6-auth's public key — no network call on the hot path. The token is checked before the request reaches any renderer. Renderers can perform additional fine-grained checks via the auth extensions in m6-render.
+m6-http asks m6-auth's check socket about the caller's token before the request reaches any renderer, and only for routes that declare `require`. The check verifies the token's signature, kind, issuer, audience and expiry, and answers with the caller's current roles and groups. Renderers can read the caller's identity from the request dictionary (`auth_username`, `auth_roles`, `auth_groups`) for finer checks.
 
-## Hot reload
+## Reading files once
 
-Nothing in m6 requires a restart for content changes. m6-http reloads config on `site.toml` change. Pool membership updates automatically as sockets appear and disappear. TLS certificates reload when the system config is touched, which a certbot deploy hook does after each renewal. The whole system is designed to be operated without interruption.
+Every m6 process reads its configuration, `site.toml`, templates, params files and keys once, at start. A change to a configuration file takes a restart. A change to content does not: a publish is one `POST /genid`, which re-runs the start path in every backend and swaps the new site in only if it loads, so the old one keeps serving when it does not. A certificate renewal takes a restart of m6-http, which a certbot deploy hook does after each renewal.
 
 ## Logging
 
@@ -143,15 +143,15 @@ You could build something equivalent from separate tools — nginx as the proxy,
 
 The cost is the integration surface. Each tool has its own config format, its own concept of a route, its own caching model, its own log format. Getting them to work together means writing glue, and debugging means knowing which layer handled (or dropped) each request.
 
-m6 trades that flexibility for coherence. Because all the pieces share a common design — the same socket convention, the same config format, the same model of what a route is — the integration just works. The cache can be precise about eviction because the renderer's config declares exactly which data files each route depends on. The file watcher knows what to watch because the route table tells it. None of this requires configuration or glue.
+m6 trades that flexibility for coherence. Because all the pieces share a common design — the same socket convention, the same config format, the same model of what a route is — the integration just works. A publish can be one request because every backend answers to the same site generation, and a cache that follows one number needs no glue. None of this requires configuration or glue.
 
 ## Why Unix processes rather than a monolith?
 
-The separate-process architecture isn't about flexibility for its own sake — it's about operational simplicity. Each process has one job, its own resource accounting, and its own restart boundary. A broken renderer doesn't take down the cache. Scaling a hot renderer means starting another instance; m6-http discovers the new socket via the file watcher and adds it to the pool with no config change.
+The separate-process architecture isn't about flexibility for its own sake — it's about operational simplicity. Each process has one job, its own resource accounting, and its own restart boundary. A broken renderer doesn't take down the cache. Scaling a hot renderer means starting another instance on a new socket; m6-http finds it when it expands the pool's glob at its next start, with no config change.
 
-The boundary between components is HTTP/1.1 over a Unix socket — utterly conventional. You can replace any component with anything that speaks that protocol. The m6-render library makes writing custom renderers in Rust straightforward, but any language works.
+The boundary between components is HTTP/1.1 over a Unix socket — utterly conventional. You can replace any component with anything that speaks that protocol. `m6-core` supplies the parts for writing a custom renderer in Rust, but any language works.
 
-See the individual component posts for deeper dives: [m6-http](/blog/m6-http-deep-dive), [m6-html and m6-render](/blog/m6-render-deep-dive).
+See the individual component posts for deeper dives: [m6-http](/blog/m6-http-deep-dive), [m6-html and m6-core](/blog/m6-render-deep-dive).
 
 ---
 

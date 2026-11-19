@@ -91,11 +91,12 @@ echo "-- Config --"
 BODY=$(curl -sk -H "Authorization: Bearer $TOKEN" "$BASE/api/admin/config")
 check_contains "/api/admin/config returns config" '"config"' "$BODY"
 
-# ── /api/admin/config/touch ───────────────────────────────────────────────────
-echo "-- Config touch --"
+# ── /api/admin/publish ────────────────────────────────────────────────────────
+# One POST /genid to m6-http: it reloads every backend and flushes its cache.
+echo "-- Publish --"
 CODE=$(curl -sk -o /dev/null -w "%{http_code}" -X POST \
-       -H "Authorization: Bearer $TOKEN" "$BASE/api/admin/config/touch")
-check "POST /api/admin/config/touch returns 200" "200" "$CODE"
+       -H "Authorization: Bearer $TOKEN" "$BASE/api/admin/publish")
+check "POST /api/admin/publish returns 200" "200" "$CODE"
 
 # ── /api/admin/cache/flush ────────────────────────────────────────────────────
 echo "-- Cache flush --"

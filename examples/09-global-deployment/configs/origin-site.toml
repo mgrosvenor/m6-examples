@@ -7,7 +7,6 @@ mode = "internal"
 
 [log]
 level  = "info"
-format = "text"
 
 # ── Backends — Unix sockets shared with the H2C instance ──────────────────────
 
@@ -22,6 +21,10 @@ sockets = "/run/m6/m6-file*.sock"
 [[backend]]
 name    = "m6-auth"
 sockets = "/run/m6/m6-auth*.sock"
+
+[[backend]]
+name    = "m6-auth-check"
+sockets = "/run/m6/check-m6-auth*.sock"
 
 [[backend]]
 name    = "render-cms"

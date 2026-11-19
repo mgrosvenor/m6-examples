@@ -14,7 +14,8 @@ cover   = "https://picsum.photos/seed/guide07/1200/500"
 [Example 04](/blog/guide-04-auth) →
 [Example 05](/blog/guide-05-cms) →
 [Example 06](/blog/guide-06-systemd) →
-**Example 07 — Dev to Production**
+**Example 07 — Dev to Production** →
+[Example 08](/blog/guide-08-global-deployment)
 
 ---
 
@@ -31,7 +32,6 @@ domain = "example.com"
 
 [log]
 level  = "info"
-format = "text"
 
 [errors]
 mode = "internal"
@@ -52,12 +52,18 @@ sockets = "/run/m6/m6-html-*.sock"
 # Committed to the repo — contains no secrets.
 [server]
 bind     = "127.0.0.1:8443"
-tls_cert = "keys/dev.pem"
-tls_key  = "keys/dev-key.pem"
+tls_cert = "/tmp/m6/dev/dev.pem"
+tls_key  = "/tmp/m6/dev/dev-key.pem"
 
 [auth]
-backend    = "m6-auth"
-public_key = "keys/auth.pub"
+backend = "m6-auth-check"
+
+[genid]
+read_require  = "role:genid-read"
+write_require = "role:genid-write"
+
+[node]
+name = "dev"
 ```
 
 **`/etc/m6/my-blog.toml` — production system config, on the server only:**
@@ -68,15 +74,18 @@ name = "web-1"
 
 [server]
 bind     = "0.0.0.0:443"
-tls_cert = "/etc/letsencrypt/live/example.com/fullchain.pem"
-tls_key  = "/etc/letsencrypt/live/example.com/privkey.pem"
+tls_cert = "/run/credentials/m6-http.service/tls-cert.pem"
+tls_key  = "/run/credentials/m6-http.service/tls-key.pem"
 
 [auth]
-backend    = "m6-auth"
-public_key = "/etc/m6/auth.pub"
+backend = "m6-auth-check"
+
+[genid]
+read_require  = "role:genid-read"
+write_require = "role:genid-write"
 ```
 
-The system config holds the state of one node: its identity (`[node]`), its binds and TLS paths (`[server]`), its token verify key (`[auth]`) and its metrics access keys (`metrics_require`, `metrics_peers` and `metrics_token_file` under `[health]`). `[auth]` goes in one file only, and declaring it in both files is a startup error. Its `[server]` and `[health]` keys win over `site.toml`. Everything else comes from `site.toml` unchanged.
+The system config holds the state of one node: its identity (`[node]`), its binds and TLS paths (`[server]`), its check backend (`[auth]`) and the claims that gate `/genid` (`[genid]`). Each table goes in one file only, and a key in the file that does not own it stops m6-http at start with exit 2. Everything else comes from `site.toml` unchanged.
 
 **`configs/render-contact.conf` — version controlled, uses local mock values:**
 
@@ -128,8 +137,8 @@ chown m6:m6 /var/www/my-blog
 
 # Generate production auth keys
 mkdir -p /etc/m6
-openssl ecparam -name prime256v1 -genkey -noout -out /etc/m6/auth.pem
-openssl ec -in /etc/m6/auth.pem -pubout -out /etc/m6/auth.pub
+openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -pkeyopt ec_param_enc:named_curve -out /etc/m6/auth.pem
+openssl pkey -in /etc/m6/auth.pem -pubout -out /etc/m6/auth.pub
 chown m6:m6 /etc/m6/auth.pem /etc/m6/auth.pub
 chmod 600 /etc/m6/auth.pem
 
@@ -140,12 +149,15 @@ name = "web-1"
 
 [server]
 bind     = "0.0.0.0:443"
-tls_cert = "/etc/letsencrypt/live/example.com/fullchain.pem"
-tls_key  = "/etc/letsencrypt/live/example.com/privkey.pem"
+tls_cert = "/run/credentials/m6-http.service/tls-cert.pem"
+tls_key  = "/run/credentials/m6-http.service/tls-key.pem"
 
 [auth]
-backend    = "m6-auth"
-public_key = "/etc/m6/auth.pub"
+backend = "m6-auth-check"
+
+[genid]
+read_require  = "role:genid-read"
+write_require = "role:genid-write"
 TOML
 chown root:m6 /etc/m6/my-blog.toml
 chmod 640 /etc/m6/my-blog.toml
@@ -200,7 +212,6 @@ REMOTE_SITE="/var/www/my-blog"
 
 rsync -av --delete \
   --exclude 'content/drafts/' \
-  --exclude 'data/auth.db' \
   --exclude 'keys/' \
   --exclude '*.pem' \
   --exclude '*.pub' \
@@ -216,10 +227,10 @@ if [[ "$1" == "--binary" ]]; then
 fi
 
 echo "Deployed."
-# m6-http detects site.toml change via inotify and reloads routing
+# new content is read when the site's generation advances (POST /genid)
 ```
 
-For template and config changes: `./deploy.sh` — m6-http picks up the change automatically. For renderer binary changes: `./deploy.sh --binary` — only render-cms restarts; all other units and the m6-http cache are unaffected.
+For template, data and content changes: `./deploy.sh`, then one `POST /genid` (the CMS sends it when an editor publishes), which reloads every backend and empties the cache. A `site.toml` or system config change takes a restart of m6-http. For renderer binary changes: `./deploy.sh --binary` — only render-cms restarts; all other units and the m6-http cache are unaffected.
 
 ## Dev vs production at a glance
 
@@ -227,10 +238,11 @@ For template and config changes: `./deploy.sh` — m6-http picks up the change a
 |---|---|---|
 | `m6-http` invocation | `m6-http $SITE $SITE/configs/system-dev.toml` | `m6-http /var/www/my-blog /etc/m6/my-blog.toml` |
 | `[server] bind` | `127.0.0.1:8443` | `0.0.0.0:443` |
-| TLS cert | `keys/dev.pem` (issued by `dev.sh`) | `/etc/letsencrypt/...` (certbot) |
+| TLS cert | `/tmp/m6/dev/dev.pem` | `/run/credentials/m6-http.service/tls-cert.pem` |
 | SMTP | `localhost:1025` (mock) | `smtp.postmarkapp.com:587` |
 | SMTP credentials | inline in renderer config | `/etc/m6/contact-secrets.toml` via `secrets_file` |
-| `[auth] public_key` | `keys/auth.pub` | `/etc/m6/auth.pub` |
+| `[auth] backend` | `m6-auth-check` | `m6-auth-check` |
+| publisher token (`[genid] token_file` in the renderer config) | `/tmp/m6/07-dev-to-production/genid-write.token` | `/run/credentials/render-cms.service/genid-write.token` |
 | System config | `configs/system-dev.toml` (in repo) | `/etc/m6/my-blog.toml` (on server) |
 | Process manager | `dev.sh` | systemd |
 | Logs | terminal stdout | journald |
@@ -266,7 +278,7 @@ m6-http /var/www/my-blog /etc/m6/my-blog.toml --dump-config
 #
 # [server]
 # bind     = "0.0.0.0:443"
-# tls_cert = "/etc/letsencrypt/live/example.com/fullchain.pem"
+# tls_cert = "/run/credentials/m6-http.service/tls-cert.pem"
 # ...
 ```
 
@@ -298,7 +310,6 @@ rsync -av ./ user@server:/var/www/my-blog/
 # Right — always exclude server-managed state
 rsync -av \
   --exclude 'content/drafts/' \
-  --exclude 'data/auth.db' \
   --exclude 'keys/' \
   ./ user@server:/var/www/my-blog/
 ```
@@ -315,8 +326,8 @@ ssh server vim /var/www/my-blog/site.toml
 
 ---
 
-That completes the guide. For the architecture deep-dives, see the [architecture overview](/blog/architecture), the [m6-http internals post](/blog/m6-http-deep-dive), and the [m6-html and m6-render post](/blog/m6-render-deep-dive).
+That completes the guide. For the architecture deep-dives, see the [architecture overview](/blog/architecture), the [m6-http internals post](/blog/m6-http-deep-dive), and the [m6-html and m6-core post](/blog/m6-render-deep-dive).
 
 ---
 
-**← [Example 06 — Production with systemd](/blog/guide-06-systemd)**
+**← [Example 06 — Production with systemd](/blog/guide-06-systemd)** | **[Example 08 — Global Deployment](/blog/guide-08-global-deployment) →**

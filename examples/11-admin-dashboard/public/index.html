@@ -376,12 +376,12 @@
   <div class="row">
     <button class="btn secondary" id="cfg-reload">Reload</button>
     <button class="btn"           id="cfg-save">Save &amp; apply</button>
-    <button class="btn secondary" id="cfg-touch">Touch (reload only)</button>
+    <button class="btn secondary" id="cfg-publish">Publish</button>
     <button class="btn danger"    id="cfg-flush">Flush cache</button>
   </div>
   <p style="font-size:.75rem;color:var(--muted);margin-bottom:.75rem">
     Edit site.toml settings below. <strong>Save &amp; apply</strong> writes back atomically.
-    <strong>Touch</strong> bumps the mtime so m6-http hot-reloads without changing content.
+    <strong>Publish</strong> sends <code>POST /genid</code> to m6-http, which reloads every backend and flushes its cache.
   </p>
   <!-- skeleton / config form -->
   <div id="cfg-wrap">
@@ -1340,7 +1340,6 @@ function renderConfigForm(cfg) {
   if (cfg.log) {
     parts.push(`<div class="cfg-section"><h3>Logging</h3><div class="cfg-fields">
       ${cfgSelect('Level',  'log.level',  cfg.log.level,        ['trace','debug','info','warn','error'])}
-      ${cfgSelect('Format', 'log.format', cfg.log.format ?? 'text', ['text','json'])}
     </div></div>`);
   }
 
@@ -1435,15 +1434,15 @@ $('cfg-save').onclick = async () => {
   } catch(e) { showMsg($('config-msg'), 'Save failed: ' + e.message, 'err'); }
 };
 
-$('cfg-touch').onclick = async () => {
+$('cfg-publish').onclick = async () => {
   try {
-    await api('POST', '/config/touch');
-    showMsg($('config-msg'), 'Touched — m6-http will hot-reload.', 'ok');
-  } catch(e) { showMsg($('config-msg'), 'Touch failed: ' + e.message, 'err'); }
+    await api('POST', '/publish');
+    showMsg($('config-msg'), 'Published: the backends reloaded and the cache is flushed.', 'ok');
+  } catch(e) { showMsg($('config-msg'), 'Publish failed: ' + e.message, 'err'); }
 };
 
 $('cfg-flush').onclick = async () => {
-  if (!confirm('Flush cache? This touches site.toml and triggers a hot reload.')) return;
+  if (!confirm('Flush cache? This publishes a new generation: every backend reloads.')) return;
   try {
     await api('POST', '/cache/flush');
     showMsg($('config-msg'), 'Cache flushed.', 'ok');

@@ -124,13 +124,13 @@ jobs:
       # Parsed with the real binary, because a config this repository cannot
       # start is the defect that hid for two days. Every example is accounted
       # for: 06-systemd is systemd units with no site config, and
-      # 09-global-deployment's configs name /etc/letsencrypt paths for five real
-      # cache nodes, so m6-http rejects them here for a missing certificate
-      # rather than for anything wrong with them (its own integration test covers
-      # it, and ran above). An example with neither a config nor a reason
-      # recorded here fails the job, rather than being quietly stepped over.
-      # A fresh checkout has no keys/: they are gitignored, and each example's
-      # dev.sh generates them. The config parse below validates that tls_cert
+      # 09-global-deployment holds one system config per node and one site
+      # config per role, so it has no single configs/system-dev.toml for this
+      # loop to parse (its own integration test covers it, and ran above). An
+      # example with neither a config nor a reason recorded here fails the job,
+      # rather than being quietly stepped over.
+      # A fresh checkout has no development keys: examples/dev-keys.sh writes
+      # them to /tmp/m6/dev. The config parse below validates that tls_cert
       # exists, so without this EVERY example is rejected for a missing file and
       # the job fails saying "9 config(s) rejected by m6-http" while nothing is
       # wrong with any of them.
@@ -175,26 +175,7 @@ jobs:
       - name: Development certificates and auth keys
         working-directory: m6-examples
         run: |
-          for d in examples/*/; do
-            [ -f "$d/dev.sh" ] || continue
-            mkdir -p "$d/keys"
-            if [ ! -f "$d/keys/dev.pem" ]; then
-              openssl req -x509 -newkey rsa:2048 -sha256 -days 365 -nodes \
-                -keyout "$d/keys/dev-key.pem" -out "$d/keys/dev.pem" \
-                -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" 2>/dev/null
-            fi
-            # PKCS#8 (`genpkey`), not SEC1: m6-auth-server refuses SEC1 with
-            # "invalid private key (tried EC and RSA): InvalidKeyFormat".
-            # `ec_param_enc:named_curve` too, so the key carries the prime256v1
-            # OID rather than explicit curve parameters, which the token signer
-            # rejects with "JWT encode error: InvalidEcdsaKey".
-            if [ ! -f "$d/keys/auth.pub" ]; then
-              openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 \
-                -pkeyopt ec_param_enc:named_curve -out "$d/keys/auth.pem" 2>/dev/null
-              openssl pkey -in "$d/keys/auth.pem" -pubout -out "$d/keys/auth.pub" 2>/dev/null
-              chmod 600 "$d/keys/auth.pem" 2>/dev/null || true
-            fi
-          done
+          examples/dev-keys.sh
           echo "certificates present"
 
       - name: Every example's config parses
@@ -206,7 +187,7 @@ jobs:
             case "$name" in
               data) continue ;;
               06-systemd) echo "  $name  not parsed: systemd units only, no site config"; continue ;;
-              09-global-deployment) echo "  $name  not parsed: configs name letsencrypt paths; its integration test covers it"; continue ;;
+              09-global-deployment) echo "  $name  not parsed: per-node configs, no single system-dev.toml; its integration test covers it"; continue ;;
             esac
             sys="$d/configs/system-dev.toml"
             [ -f "$sys" ] || sys="$d/site.toml"

@@ -29,7 +29,7 @@ m6-md content/posts/ --output data/posts.json
 ./dev.sh
 ```
 
-To update content, re-run `m6-md content/posts/ --output data/posts.json`. m6-http detects the changed file via inotify and evicts affected cache entries.
+To update content, re-run `m6-md content/posts/ --output data/posts.json`. m6-html reads `data/posts.json` once, at start, so restart the stack to see the change, or send `POST /genid` where the site has a generation (Example 05 does).
 
 ## What's new
 
@@ -157,11 +157,11 @@ Note: links use `/blog/{{ doc.stem }}` — not `{{ doc.path }}`. The `path` fiel
 # One-shot generation
 m6-md content/posts/ --output data/posts.json
 
-# Watch for changes (with entr or similar)
+# Re-run it whenever a post changes (with entr or similar)
 find content/posts/ -name '*.md' | entr m6-md content/posts/ --output data/posts.json
 ```
 
-After running m6-md, touch `site.toml` if the server is already running — this triggers m6-http to reload the invalidation map and evict cached pages that reference the updated file.
+m6-md has no watch mode of its own and does not signal the server. After it writes `data/posts.json`, the running m6-html still serves the file it read at start: restart it, or send `POST /genid` to m6-http where the site is a generation source.
 
 ---
 

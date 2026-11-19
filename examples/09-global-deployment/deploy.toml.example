@@ -3,13 +3,13 @@
 # deploy.toml is listed in site-gitignore so it stays off version control.
 
 [deploy]
-origin   = "root@syd.example.com"   # SSH target for Sydney origin
+origin   = "root@example.com"   # SSH target for the origin
 site_dir = "/var/www/my-blog"       # path on every node
 ssh_opts = "-o StrictHostKeyChecking=accept-new -o ConnectTimeout=15"
 
 [cache_nodes]
-sf        = "root@sf.example.com"
-nyc       = "root@nyc.example.com"
-chicago   = "root@chi.example.com"
-london    = "root@lon.example.com"
-singapore = "root@sin.example.com"
+edge-a = "root@edge-a.example.com"
+edge-b = "root@edge-b.example.com"
+edge-c = "root@edge-c.example.com"
+edge-d = "root@edge-d.example.com"
+edge-e = "root@edge-e.example.com"

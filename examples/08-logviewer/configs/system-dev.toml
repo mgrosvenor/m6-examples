@@ -1,4 +1,7 @@
 [server]
 bind     = "0.0.0.0:8443"
-tls_cert = "keys/dev.pem"
-tls_key  = "keys/dev-key.pem"
+tls_cert = "/tmp/m6/dev/dev.pem"
+tls_key  = "/tmp/m6/dev/dev-key.pem"
+
+[node]
+name = "dev"
