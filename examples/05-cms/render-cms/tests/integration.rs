@@ -958,6 +958,16 @@ fn blog_site_end_to_end() {
         r.status,
         200
     );
+    // An unknown stem answers 200 as well, so the status alone proves nothing:
+    // the page has to carry this post's own title.
+    check_contains!(
+        &format!("GET /blog/{stem} → shows the post's title"),
+        r.body,
+        &title
+    );
+
+    let r = get_with_cookie_str(addr, "/blog", "", Arc::clone(&tls));
+    check_contains!("GET /blog lists the published post", r.body, &stem);
 
     let r = post(
         addr,

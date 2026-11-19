@@ -164,6 +164,16 @@ fn https_get(
     extra_headers: &[(&str, &str)],
     tls: Arc<rustls::ClientConfig>,
 ) -> Result<Response, String> {
+    https_request("GET", addr, path, extra_headers, tls)
+}
+
+fn https_request(
+    method: &str,
+    addr: &str,
+    path: &str,
+    extra_headers: &[(&str, &str)],
+    tls: Arc<rustls::ClientConfig>,
+) -> Result<Response, String> {
     let tcp = TcpStream::connect(addr).map_err(|e| format!("connect {addr}: {e}"))?;
     tcp.set_read_timeout(Some(Duration::from_secs(10))).ok();
     tcp.set_write_timeout(Some(Duration::from_secs(10))).ok();
@@ -174,7 +184,7 @@ fn https_get(
         rustls::ClientConnection::new(tls, server_name).map_err(|e| format!("TLS init: {e}"))?;
     let mut stream = rustls::StreamOwned::new(conn, tcp);
 
-    let mut req = format!("GET {path} HTTP/1.1\r\nHost: localhost\r\n");
+    let mut req = format!("{method} {path} HTTP/1.1\r\nHost: localhost\r\n");
     for (k, v) in extra_headers {
         req.push_str(&format!("{k}: {v}\r\n"));
     }
@@ -357,6 +367,20 @@ fn get(addr: &str, path: &str, tls: Arc<rustls::ClientConfig>) -> Response {
     https_get(addr, path, &[], tls).unwrap_or_else(|e| panic!("GET {path}: {e}"))
 }
 
+/// `POST /genid` on the origin with the publisher's token: the one request that
+/// advances the site's generation.
+fn publish_genid(addr: &str, token: &str, tls: Arc<rustls::ClientConfig>) -> Response {
+    let bearer = format!("Bearer {token}");
+    https_request(
+        "POST",
+        addr,
+        "/genid",
+        &[("Authorization", &bearer), ("Content-Length", "0")],
+        tls,
+    )
+    .unwrap_or_else(|e| panic!("POST /genid: {e}"))
+}
+
 // ── wait helpers ──────────────────────────────────────────────────────────────
 
 fn wait_tcp(addr: &str, timeout: Duration) -> bool {
@@ -424,6 +448,8 @@ struct GlobalStack {
     origin_addr: String,      // TLS endpoint
     origin_h2c: String,       // H2C backbone (plain TCP)
     cache_addrs: Vec<String>, // [edge-a, edge-b, edge-c, edge-d, edge-e]
+    site_dir: PathBuf,        // the copy of 07's site the origin serves
+    write_token: String,      // a token with the genid-write role
     processes: Vec<Child>,
     _temp_dirs: Vec<tempfile::TempDir>,
 }
@@ -738,6 +764,11 @@ impl GlobalStack {
             origin_addr: origin_tls_addr,
             origin_h2c: origin_h2c_addr,
             cache_addrs,
+            site_dir: site07,
+            write_token: std::fs::read_to_string(&write_token)
+                .ok()?
+                .trim()
+                .to_string(),
             processes,
             _temp_dirs: temp_dirs,
         })
@@ -927,6 +958,67 @@ fn global_deployment_end_to_end() {
             &format!("{} GET /nonexistent → 404", node_names[i]),
             r.status,
             404
+        );
+    }
+
+    // ── §7 A new generation reaches every cache node ──────────────────────
+    //
+    // The cache nodes follow the origin's generation ([genid] upstream). A publish
+    // is one POST /genid on the origin: it reloads the origin's backends, flushes
+    // its cache and advances the generation, and each cache node then drops what it
+    // holds and serves the new content.
+
+    eprintln!("\n── §7 A publish at the origin reaches every cache node ──");
+
+    let marker = format!("generation-marker-{}", std::process::id());
+    for (i, addr) in stack.cache_addrs.iter().enumerate() {
+        let r = get(addr, "/about", Arc::clone(&tls));
+        check_eq!(
+            &format!("{} GET /about → 200", node_names[i]),
+            r.status,
+            200
+        );
+        assert!(
+            !r.body.contains(&marker),
+            "FAIL  {} serves the marker before it exists",
+            node_names[i]
+        );
+    }
+
+    let about = stack.site_dir.join("data/about.json");
+    std::fs::write(
+        &about,
+        format!(r#"{{"title":"About","body":"<p>{marker}</p>"}}"#),
+    )
+    .expect("write the changed about.json");
+
+    // A publish without the right token is refused.
+    let r = publish_genid(origin, "not-a-token", Arc::clone(&tls));
+    assert!(
+        [401u16, 403].contains(&r.status),
+        "FAIL  POST /genid with a bad token → {}, expected 401/403",
+        r.status
+    );
+    eprintln!("  PASS  POST /genid with a bad token → {}", r.status);
+
+    let r = publish_genid(origin, &stack.write_token, Arc::clone(&tls));
+    check_eq!("POST /genid with the publisher token → 200", r.status, 200);
+
+    let r = get(origin, "/about", Arc::clone(&tls));
+    check_contains!("origin /about → the new content", r.body, &marker);
+
+    // The heartbeat is 2 seconds, so a cache node follows within a few.
+    for (i, addr) in stack.cache_addrs.iter().enumerate() {
+        let deadline = Instant::now() + Duration::from_secs(20);
+        let mut r = get(addr, "/about", Arc::clone(&tls));
+        while !r.body.contains(&marker) && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(250));
+            r = get(addr, "/about", Arc::clone(&tls));
+        }
+        check_contains!(
+            &format!("{} /about → follows the new generation", node_names[i]),
+            r.body,
+            &marker
         );
     }
 
