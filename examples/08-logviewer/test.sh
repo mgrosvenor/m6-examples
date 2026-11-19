@@ -47,9 +47,6 @@ mkdir -p /tmp/m6
 
 # Kill stale processes holding port 8443 or backend sockets.
 lsof -ti :8443 2>/dev/null | xargs kill -9 2>/dev/null || true
-pkill -x m6-http 2>/dev/null || true
-pkill -x m6-html 2>/dev/null || true
-pkill -x m6-file 2>/dev/null || true
 sleep 0.3
 
 rm -f /tmp/m6/m6-html.sock /tmp/m6/m6-file.sock
