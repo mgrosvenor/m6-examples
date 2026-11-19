@@ -10,27 +10,36 @@ DEV="$M6_DEV_HOME/dev"
 m6_private_dir "$DEV"
 umask 077
 
-# Development TLS certificate for localhost.
-if [ ! -f "$DEV/dev.pem" ] || [ ! -f "$DEV/dev-key.pem" ]; then
+# Development TLS certificate for localhost. Made again when it is missing, has
+# expired or expires within 7 days, and ca.pem is rewritten whenever it is.
+cert_usable() {
+    [ -f "$DEV/dev.pem" ] && [ -f "$DEV/dev-key.pem" ] &&
+        openssl x509 -checkend 604800 -noout -in "$DEV/dev.pem" >/dev/null 2>&1
+}
+
+new_cert=0
+if ! cert_usable; then
+    new_cert=1
+    rm -f "$DEV/dev.pem" "$DEV/dev-key.pem"
     if command -v mkcert &>/dev/null; then
         mkcert -install 2>/dev/null || true
         mkcert -key-file "$DEV/dev-key.pem" \
                -cert-file "$DEV/dev.pem" \
                localhost 127.0.0.1
     elif command -v openssl &>/dev/null; then
-        # No mkcert: fall back to a self-signed certificate.
-        #
-        # The only thing mkcert adds is a local CA your browser already trusts,
-        # which matters to a person clicking around and not to `curl -k` or to a
-        # test suite. This used to be a hard `exit 1`, and m6's build host has no
-        # mkcert -- the CI stage that runs this example only worked because rsync
-        # happened to carry a developer's own untracked keys/ directory. A check
-        # that depends on an untracked file is not a check.
+        # No mkcert: a self-signed certificate. A browser warns about it; curl -k
+        # and the tests do not care. It must not be a CA: rustls rejects a CA
+        # certificate used as a server certificate, and OpenSSL 3 adds CA:TRUE
+        # to a self-signed certificate unless told otherwise.
         echo "mkcert not found; generating a self-signed certificate with openssl."
         echo "Your browser will warn about it. For one it trusts: brew install mkcert"
         openssl req -x509 -newkey rsa:2048 -sha256 -days 365 -nodes \
             -keyout "$DEV/dev-key.pem" -out "$DEV/dev.pem" \
-            -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" 2>/dev/null \
+            -subj "/CN=localhost" \
+            -addext "basicConstraints=critical,CA:FALSE" \
+            -addext "keyUsage=critical,digitalSignature,keyEncipherment" \
+            -addext "extendedKeyUsage=serverAuth" \
+            -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" 2>/dev/null \
             || { echo "ERROR: openssl could not write a certificate." >&2; exit 1; }
     else
         echo "ERROR: neither mkcert nor openssl found. Install one:" >&2
@@ -44,7 +53,7 @@ fi
 # The certificate a client trusts to reach this node: mkcert's local CA when
 # mkcert made the certificate, else the self-signed certificate itself. A
 # renderer that publishes with `POST /genid` names this file as `ca_file`.
-if [ ! -f "$DEV/ca.pem" ]; then
+if [ "$new_cert" = 1 ] || [ ! -f "$DEV/ca.pem" ]; then
     if command -v mkcert &>/dev/null && [ -f "$(mkcert -CAROOT)/rootCA.pem" ]; then
         cp "$(mkcert -CAROOT)/rootCA.pem" "$DEV/ca.pem"
     else
