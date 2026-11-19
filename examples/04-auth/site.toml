@@ -8,7 +8,6 @@ verbose_fallback = true
 
 [log]
 level  = "info"
-format = "text"
 
 [[backend]]
 name    = "m6-html"
@@ -21,6 +20,10 @@ sockets = "/tmp/m6/m6-file*.sock"
 [[backend]]
 name    = "m6-auth"
 sockets = "/tmp/m6/m6-auth*.sock"
+
+[[backend]]
+name    = "m6-auth-check"
+sockets = "/tmp/m6/check-m6-auth*.sock"
 
 [[backend]]
 name    = "render-contact"

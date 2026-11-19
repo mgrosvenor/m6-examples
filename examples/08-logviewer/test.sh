@@ -37,21 +37,9 @@ echo "=== Building m6 binaries ==="
 (cd "$M6" && cargo build --release --quiet)
 export PATH="$M6/target/release:$PATH"
 
-# ── 3. Generate dev TLS certs (once) ──────────────────────────────────────────
-mkdir -p "$SITE/keys"
-if [[ ! -f "$SITE/keys/dev.pem" ]]; then
-    echo "=== Generating dev TLS certs ==="
-    if ! command -v mkcert &>/dev/null; then
-        echo "ERROR: mkcert not found. Install with: brew install mkcert" >&2
-        exit 1
-    fi
-    mkcert -install 2>/dev/null || true
-    mkcert -key-file "$SITE/keys/dev-key.pem" \
-           -cert-file "$SITE/keys/dev.pem" \
-           localhost 127.0.0.1
-else
-    echo "=== TLS certs already present, skipping ==="
-fi
+# Development keys and state: a private per-user directory, see dev-home.sh.
+. "$SITE/../dev-home.sh"
+"$SITE/../dev-keys.sh"
 
 # ── 4. Start stack ────────────────────────────────────────────────────────────
 mkdir -p "$SITE/logs"
@@ -59,9 +47,6 @@ mkdir -p /tmp/m6
 
 # Kill stale processes holding port 8443 or backend sockets.
 lsof -ti :8443 2>/dev/null | xargs kill -9 2>/dev/null || true
-pkill -x m6-http 2>/dev/null || true
-pkill -x m6-html 2>/dev/null || true
-pkill -x m6-file 2>/dev/null || true
 sleep 0.3
 
 rm -f /tmp/m6/m6-html.sock /tmp/m6/m6-file.sock
@@ -83,7 +68,7 @@ for i in $(seq 1 20); do
     sleep 0.25
 done
 
-m6-http "$SITE" "$SITE/configs/system-dev.toml" >> "$SITE/logs/m6-http.log" 2>&1 &
+m6-http "$SITE" "$(m6_conf "$SITE/configs/system-dev.toml")" >> "$SITE/logs/m6-http.log" 2>&1 &
 HTTP_PID=$!
 
 # Wait for server readiness via HTTP/1.1 (always available)

@@ -7,7 +7,6 @@ REMOTE_SITE="/var/www/my-blog"
 
 rsync -av --delete \
   --exclude 'content/drafts/' \
-  --exclude 'data/auth.db' \
   --exclude 'keys/' \
   --exclude '*.pem' \
   --exclude '*.pub' \
@@ -23,4 +22,5 @@ if [[ "$1" == "--binary" ]]; then
 fi
 
 echo "Deployed."
-# m6-http detects site.toml change via inotify and reloads routing
+# restart m6-http so it reads the new site.toml
+ssh "$SERVER" systemctl restart m6-http

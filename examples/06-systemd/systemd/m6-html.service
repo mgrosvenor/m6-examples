@@ -10,6 +10,7 @@ Group=m6
 
 RuntimeDirectory=m6
 RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
 
 ExecStart=/usr/local/bin/m6-html \
     /var/www/my-blog \

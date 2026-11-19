@@ -16,8 +16,8 @@ ssh_opts = "-o StrictHostKeyChecking=no -o ConnectTimeout=5"
 # Cache nodes run as separate m6-http instances from the same site-cache dir.
 # There is no separate content to push — they all proxy to origin H2C.
 # Leave these empty or comment out to skip cache propagation.
-# sf        = "localhost"   # no-op: cache nodes share site-cache/ at runtime
-# nyc       = "localhost"
-# chicago   = "localhost"
-# london    = "localhost"
-# singapore = "localhost"
+# edge-a = "localhost"   # no-op: cache nodes share site-cache/ at runtime
+# edge-b = "localhost"
+# edge-c = "localhost"
+# edge-d = "localhost"
+# edge-e = "localhost"

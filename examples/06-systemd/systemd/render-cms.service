@@ -8,10 +8,15 @@ User=m6
 Group=m6
 RuntimeDirectory=m6
 RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
 
 ExecStart=/var/www/my-blog/bin/render-cms \
     /var/www/my-blog \
-    /var/www/my-blog/configs/render-cms.conf
+    /etc/m6/render-cms.conf
+
+# The token that lets render-cms publish with POST /genid. It arrives as
+# /run/credentials/render-cms.service/genid-write.token
+LoadCredential=genid-write.token:/etc/m6/genid-write.token
 
 Restart=on-failure
 RestartSec=2

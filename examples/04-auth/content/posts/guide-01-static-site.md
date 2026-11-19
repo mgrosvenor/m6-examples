@@ -67,7 +67,6 @@ verbose_fallback = true
 
 [log]
 level  = "info"
-format = "text"
 
 [[backend]]
 name    = "m6-html"
@@ -104,11 +103,14 @@ The `[[route_group]]` glob expands at startup: every file under `assets/` become
 ```toml
 [server]
 bind     = "127.0.0.1:8443"
-tls_cert = "keys/dev.pem"
-tls_key  = "keys/dev-key.pem"
+tls_cert = "@M6_DEV_HOME@/dev/dev.pem"
+tls_key  = "@M6_DEV_HOME@/dev/dev-key.pem"
+
+[node]
+name = "dev"
 ```
 
-The system config holds the state of the machine that runs m6-http: the address to listen on and the TLS certificate. It is the second argument to m6-http (see `dev.sh` below). Relative paths resolve against the site directory, and `dev.sh` issues `keys/dev.pem` and `keys/dev-key.pem` on first run. A production machine has its own system config with its own bind address and certificate paths, and `site.toml` stays the same.
+The system config holds the state of the machine that runs m6-http: the node name, the address to listen on and the TLS certificate. It is the second argument to m6-http (see `dev.sh` below). The paths are absolute, and `dev.sh` runs `examples/dev-keys.sh`, which writes them to `dev/` in a private per-user directory on first run. The config spells that directory `@M6_DEV_HOME@`, and `dev.sh` writes a copy with the real path and gives m6-http the copy. A production machine has its own system config with its own node name, bind address and certificate paths, and `site.toml` stays the same.
 
 ## `configs/m6-html.conf`
 
@@ -209,36 +211,9 @@ SITE="$(cd "$(dirname "$0")" && pwd)"
 M6="${M6:-$(cd "$SITE/../../.." && pwd)/m6}"
 export PATH="$M6/target/release:$PATH"
 
-# ── TLS certs ─────────────────────────────────────────────────────────────────
-mkdir -p "$SITE/keys"
-if [ ! -f "$SITE/keys/dev.pem" ]; then
-    if command -v mkcert &>/dev/null; then
-        mkcert -install 2>/dev/null || true
-        mkcert -key-file "$SITE/keys/dev-key.pem" \
-               -cert-file "$SITE/keys/dev.pem" \
-               localhost 127.0.0.1
-    elif command -v openssl &>/dev/null; then
-        # No mkcert: fall back to a self-signed certificate.
-        #
-        # The only thing mkcert adds is a local CA your browser already trusts,
-        # which matters to a person clicking around and not to `curl -k` or to a
-        # test suite. This used to be a hard `exit 1`, and m6's build host has no
-        # mkcert -- the CI stage that runs this example only worked because rsync
-        # happened to carry a developer's own untracked keys/ directory. A check
-        # that depends on an untracked file is not a check.
-        echo "mkcert not found; generating a self-signed certificate with openssl."
-        echo "Your browser will warn about it. For one it trusts: brew install mkcert"
-        openssl req -x509 -newkey rsa:2048 -sha256 -days 365 -nodes \
-            -keyout "$SITE/keys/dev-key.pem" -out "$SITE/keys/dev.pem" \
-            -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" 2>/dev/null \
-            || { echo "ERROR: openssl could not write a certificate." >&2; exit 1; }
-    else
-        echo "ERROR: neither mkcert nor openssl found. Install one:" >&2
-        echo "  mkcert   - certificate your browser trusts (brew install mkcert)" >&2
-        echo "  openssl  - self-signed, browser warns" >&2
-        exit 1
-    fi
-fi
+# Development keys and state: a private per-user directory, see dev-home.sh.
+. "$SITE/../dev-home.sh"
+"$SITE/../dev-keys.sh"
 
 # ── Clean up stale state ──────────────────────────────────────────────────────
 mkdir -p /tmp/m6
@@ -263,24 +238,20 @@ for i in $(seq 1 20); do
     sleep 0.2
 done
 
-m6-http "$SITE" "$SITE/configs/system-dev.toml" &
+m6-http "$SITE" "$(m6_conf "$SITE/configs/system-dev.toml")" &
 HTTP_PID=$!
 
 echo "Running at https://localhost:8443"
 wait
 ```
 
-The first block issues the certificate named in `configs/system-dev.toml` if `keys/dev.pem` does not exist yet. It uses `mkcert` when installed and falls back to a self-signed `openssl` certificate. The script then starts three background processes. `trap` kills them all on `Ctrl-C`. `set -e` aborts if any step fails.
+The first lines load `examples/dev-home.sh`, which creates the private per-user directory (`m6_conf` writes a config copy with the real path into it), and run `examples/dev-keys.sh`, which writes the certificate named in `configs/system-dev.toml` into that directory if it does not exist yet. It uses `mkcert` when installed and falls back to a self-signed `openssl` certificate. The script then starts three background processes. `trap` kills them all on `Ctrl-C`. `set -e` aborts if any step fails.
 
-## Hot reload
+## Seeing a change
 
-Change anything in `data/site.json` or a template, then:
+m6 reads its configuration, `site.toml`, templates and params files once, at start. After you change `data/site.json` or a template, stop the stack with `Ctrl-C` and run `./dev.sh` again. m6-http keeps its cache in memory, so a restart also empties it.
 
-```bash
-touch site.toml
-```
-
-m6-http watches `site.toml` via inotify. Touching it triggers a full config and cache reload — no restart. Your changes are live in milliseconds.
+A site that must show a change without a restart gives m6-http a `[genid]` table, and whatever changes the content sends `POST /genid` when it finishes: m6-http reloads every backend, empties its cache and answers with the new generation. [Example 05](/blog/guide-05-cms) does this when an editor publishes.
 
 ---
 

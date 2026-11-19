@@ -16,37 +16,9 @@ info "Building m6 binaries..."
 (cd "$M6" && cargo build --release --quiet)
 export PATH="$M6/target/release:$PATH"
 
-# ── TLS certs ─────────────────────────────────────────────────────────────────
-mkdir -p "$SITE/keys"
-if [[ ! -f "$SITE/keys/dev.pem" ]]; then
-    info "Generating dev TLS certs..."
-    if command -v mkcert &>/dev/null; then
-        mkcert -install 2>/dev/null || true
-        mkcert -key-file "$SITE/keys/dev-key.pem" \
-               -cert-file "$SITE/keys/dev.pem" \
-               localhost 127.0.0.1
-    elif command -v openssl &>/dev/null; then
-        # No mkcert: fall back to a self-signed certificate.
-        #
-        # The only thing mkcert adds is a local CA your browser already trusts,
-        # which matters to a person clicking around and not to `curl -k` or to a
-        # test suite. This used to be a hard `exit 1`, and m6's build host has no
-        # mkcert -- the CI stage that runs this example only worked because rsync
-        # happened to carry a developer's own untracked keys/ directory. A check
-        # that depends on an untracked file is not a check.
-        echo "mkcert not found; generating a self-signed certificate with openssl."
-        echo "Your browser will warn about it. For one it trusts: brew install mkcert"
-        openssl req -x509 -newkey rsa:2048 -sha256 -days 365 -nodes \
-            -keyout "$SITE/keys/dev-key.pem" -out "$SITE/keys/dev.pem" \
-            -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" 2>/dev/null \
-            || { echo "ERROR: openssl could not write a certificate." >&2; exit 1; }
-    else
-        echo "ERROR: neither mkcert nor openssl found. Install one:" >&2
-        echo "  mkcert   - certificate your browser trusts (brew install mkcert)" >&2
-        echo "  openssl  - self-signed, browser warns" >&2
-        exit 1
-    fi
-fi
+# Development keys and state: a private per-user directory, see dev-home.sh.
+. "$SITE/../dev-home.sh"
+"$SITE/../dev-keys.sh"
 
 # ── Clean up stale state ──────────────────────────────────────────────────────
 mkdir -p "$SITE/logs"
@@ -55,19 +27,9 @@ mkdir -p /tmp/m6
 # Kill any stale m6 processes holding port 8443 or our sockets.
 # lsof -ti gives the PID holding the port silently.
 lsof -ti :8443 2>/dev/null | xargs kill -9 2>/dev/null || true
-# Kill only THIS example's own processes.
-#
-# This used to be `pkill -x m6-http; pkill -x m6-html; ...`, which matches by
-# process name across the whole machine. Anyone with another m6 site running --
-# their own site, a preview instance, a multi-node local fleet -- lost all of it
-# the moment they started this example, with no warning and nothing in the log
-# saying what had happened. It killed a running seven-node local fleet exactly
-# that way.
-#
-# `pgrep -f "$SITE"` matches the site directory in the command line instead, so
-# it can only ever reach processes started for this example. The port holder on
-# the bind address is killed separately above, because a stale process from an
-# earlier run of THIS example is the case the cleanup is actually for.
+# Kill only this example's own processes: matching the site directory in the
+# command line cannot reach another m6 on the machine. The port holder is killed
+# above, to clear a stale run of this example.
 kill_own() {
     local pid
     for pid in $(pgrep -f "$SITE" 2>/dev/null || true); do
@@ -111,7 +73,7 @@ for i in $(seq 1 20); do
 done
 
 info "Starting m6-http..."
-m6-http "$SITE" "$SITE/configs/system-dev.toml" >> "$SITE/logs/m6-http.log" 2>&1 &
+m6-http "$SITE" "$(m6_conf "$SITE/configs/system-dev.toml")" >> "$SITE/logs/m6-http.log" 2>&1 &
 HTTP_PID=$!
 
 # Wait for server readiness

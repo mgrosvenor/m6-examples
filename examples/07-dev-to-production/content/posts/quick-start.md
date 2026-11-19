@@ -8,7 +8,7 @@ cover   = "https://picsum.photos/seed/quickstart/1200/500"
 
 m6 is an integrated system for building and serving websites. It covers the whole stack — from authoring content in Markdown to writing bytes to a network socket — under one roof, with a single config format and a unified set of concepts.
 
-Under the hood it's a family of small Unix processes, each with one job, communicating over Unix sockets. What makes it more than a collection of parts is that the pieces are designed to work together: the cache knows what each URL depends on, the renderer produces output the cache can serve directly, the file watcher knows when to evict. The result is a system that's simpler to reason about than a stack assembled from separate tools, and fast because none of the layers work against each other.
+Under the hood it's a family of small Unix processes, each with one job, communicating over Unix sockets. What makes it more than a collection of parts is that the pieces are designed to work together: the renderer produces output the cache can serve directly, and one request, `POST /genid`, makes every backend read new content and empties the cache. The result is a system that's simpler to reason about than a stack assembled from separate tools, and fast because none of the layers work against each other.
 
 There's no framework to install, no build pipeline to configure, and no daemon to babysit — systemd handles process management in production, and a shell script handles it in development.
 
@@ -23,7 +23,7 @@ cargo install m6-http m6-html m6-file
 mkcert -install && mkcert localhost 127.0.0.1
 ```
 
-The `mkcert` command writes `localhost+1.pem` and `localhost+1-key.pem` in the current directory. The examples do not read those two files. Each example's `dev.sh` makes its own `keys/dev.pem` and `keys/dev-key.pem`, and the system config refers to those.
+The `mkcert` command writes `localhost+1.pem` and `localhost+1-key.pem` in the current directory. The examples do not read those two files. Each example's `dev.sh` runs `examples/dev-keys.sh`, which writes `dev.pem` and `dev-key.pem` to `dev/` in a private per-user directory (`@M6_DEV_HOME@` in the configs), and the system config refers to those.
 
 ## Clone the examples
 
@@ -83,13 +83,7 @@ No binary blobs. No generated files. Everything you see is what you deploy.
 
 ## Editing content
 
-Open `data/site.json` and change `site_name`. Then touch `site.toml`:
-
-```bash
-touch site.toml
-```
-
-m6-http watches `site.toml` via inotify. Touching it triggers a config reload and cache eviction — no restart, no bounce. Reload your browser tab.
+Open `data/site.json` and change `site_name`. Then stop the stack with `Ctrl-C` and run `./dev.sh` again. m6 reads its files once, at start, so a change shows after a restart, which also empties m6-http's cache. Reload your browser tab.
 
 ## Add a page
 
@@ -108,7 +102,7 @@ Create `data/contact.json`:
 { "title": "Contact", "body": "<p>hello@example.com</p>" }
 ```
 
-Touch `site.toml`, and `https://localhost:8443/contact` is live.
+Restart the stack, and `https://localhost:8443/contact` is live.
 
 ## Next steps
 

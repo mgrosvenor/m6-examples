@@ -8,7 +8,8 @@ M6="$(cd "$SITE/../../../m6" && pwd)"
 export PATH="$M6/target/release:$PATH"
 
 BASE="https://localhost:8444"
-CONF="$SITE/configs/m6-auth.conf"
+. "$SITE/../dev-home.sh"
+CONF="$(m6_conf "$SITE/configs/m6-auth.conf")"
 PASS=0
 FAIL=0
 
@@ -91,11 +92,12 @@ echo "-- Config --"
 BODY=$(curl -sk -H "Authorization: Bearer $TOKEN" "$BASE/api/admin/config")
 check_contains "/api/admin/config returns config" '"config"' "$BODY"
 
-# ── /api/admin/config/touch ───────────────────────────────────────────────────
-echo "-- Config touch --"
+# ── /api/admin/publish ────────────────────────────────────────────────────────
+# One POST /genid to m6-http: it reloads every backend and flushes its cache.
+echo "-- Publish --"
 CODE=$(curl -sk -o /dev/null -w "%{http_code}" -X POST \
-       -H "Authorization: Bearer $TOKEN" "$BASE/api/admin/config/touch")
-check "POST /api/admin/config/touch returns 200" "200" "$CODE"
+       -H "Authorization: Bearer $TOKEN" "$BASE/api/admin/publish")
+check "POST /api/admin/publish returns 200" "200" "$CODE"
 
 # ── /api/admin/cache/flush ────────────────────────────────────────────────────
 echo "-- Cache flush --"

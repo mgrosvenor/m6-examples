@@ -24,19 +24,9 @@ info "Building m6 binaries..."
 (cd "$M6" && cargo build --release --quiet)
 export PATH="$M6/target/release:$PATH"
 
-# ── TLS certs ─────────────────────────────────────────────────────────────────
-mkdir -p "$SITE/keys"
-if [[ ! -f "$SITE/keys/dev.pem" ]]; then
-    info "Generating dev TLS certs..."
-    if ! command -v mkcert &>/dev/null; then
-        echo "ERROR: mkcert not found. Install with: brew install mkcert" >&2
-        exit 1
-    fi
-    mkcert -install 2>/dev/null || true
-    mkcert -key-file "$SITE/keys/dev-key.pem" \
-           -cert-file "$SITE/keys/dev.pem" \
-           localhost 127.0.0.1
-fi
+# Development keys and state: a private per-user directory, see dev-home.sh.
+. "$SITE/../dev-home.sh"
+"$SITE/../dev-keys.sh"
 
 # ── Start stack (if not already listening) ────────────────────────────────────
 STACK_STARTED=false
@@ -60,7 +50,7 @@ if ! nc -z localhost 8443 2>/dev/null; then
         echo -n "."; sleep 0.25
     done
 
-    m6-http "$SITE" "$SITE/configs/system-dev.toml" >> "$SITE/logs/m6-http.log" 2>&1 &
+    m6-http "$SITE" "$(m6_conf "$SITE/configs/system-dev.toml")" >> "$SITE/logs/m6-http.log" 2>&1 &
 
     # Wait for readiness using HTTP/1.1
     CURL="$(command -v /opt/homebrew/opt/curl/bin/curl 2>/dev/null || echo curl)"

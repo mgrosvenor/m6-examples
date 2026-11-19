@@ -1,8 +1,8 @@
-# cache-site.toml — shared site config for all cache nodes (SF, NYC, Chicago, London, Singapore).
+# cache-site.toml — shared site config for all cache nodes (edge-a through edge-e).
 # Every cache node runs this exact file unchanged. The only per-node difference is the system
-# config (cache-<city>.toml) which sets the bind address and TLS cert paths via /etc/m6/node-config.
+# config (cache-<node>.toml) which sets the bind address and TLS cert paths via /etc/m6/node-config.
 #
-# All requests are proxied upstream to Sydney over WireGuard using H2C. The WireGuard tunnel
+# All requests are proxied upstream to the origin over WireGuard using H2C. The WireGuard tunnel
 # provides encryption, so no TLS is needed on the 10.0.0.x backbone.
 #
 # Auth is NOT enforced on cache nodes — headers are forwarded to origin which validates JWTs.
@@ -18,9 +18,8 @@ mode = "internal"
 
 [log]
 level  = "info"
-format = "text"
 
-# ── Backend — Sydney origin over WireGuard H2C ────────────────────────────────
+# ── Backend — origin over WireGuard H2C ────────────────────────────────
 
 [[backend]]
 name = "origin"
@@ -78,46 +77,36 @@ backend = "origin"
 path    = "/auth/refresh"
 backend = "origin"
 
-# ── CMS — all protected, never cached ─────────────────────────────────────────
-# cache = "no-store" ensures CMS and auth routes are never stored in any
-# intermediate cache. Requests are always forwarded to the Sydney origin.
+# ── CMS — all protected ─────────────────────────────────────────
 
 [[route]]
 path    = "/cms"
 backend = "origin"
-cache   = "no-store"
 
 [[route]]
 path    = "/cms/edit/{stem}"
 backend = "origin"
-cache   = "no-store"
 
 [[route]]
 path    = "/cms/new"
 backend = "origin"
-cache   = "no-store"
 
 [[route]]
 path    = "/api/drafts"
 backend = "origin"
-cache   = "no-store"
 
 [[route]]
 path    = "/api/drafts/{stem}"
 backend = "origin"
-cache   = "no-store"
 
 [[route]]
 path    = "/api/publish/{stem}"
 backend = "origin"
-cache   = "no-store"
 
 [[route]]
 path    = "/api/unpublish/{stem}"
 backend = "origin"
-cache   = "no-store"
 
 [[route]]
 path    = "/api/posts/{stem}"
 backend = "origin"
-cache   = "no-store"

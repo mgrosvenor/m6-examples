@@ -34,8 +34,8 @@ pub fn config_read(site_toml: &Path) -> Value {
 pub fn config_write(site_toml: &Path, json: &Value) -> Result<(), String> {
     let json = &strip_empty_strings(json.clone());
     let toml_val = json_to_toml_value(json)?;
-    let content = toml::to_string_pretty(&toml_val)
-        .map_err(|e| format!("cannot serialise to TOML: {e}"))?;
+    let content =
+        toml::to_string_pretty(&toml_val).map_err(|e| format!("cannot serialise to TOML: {e}"))?;
 
     // Re-parse as a sanity check before writing.
     toml::from_str::<toml::Value>(&content).map_err(|e| format!("TOML round-trip failed: {e}"))?;
@@ -80,8 +80,7 @@ fn json_to_toml_value(v: &Value) -> Result<toml::Value, String> {
         }
         Value::String(s) => Ok(toml::Value::String(s.clone())),
         Value::Array(arr) => {
-            let vals: Result<Vec<toml::Value>, _> =
-                arr.iter().map(json_to_toml_value).collect();
+            let vals: Result<Vec<toml::Value>, _> = arr.iter().map(json_to_toml_value).collect();
             Ok(toml::Value::Array(vals?))
         }
         Value::Object(map) => {
@@ -92,19 +91,6 @@ fn json_to_toml_value(v: &Value) -> Result<toml::Value, String> {
             Ok(toml::Value::Table(table))
         }
     }
-}
-
-/// Touch site.toml to trigger m6-http config reload.
-pub fn config_touch(site_toml: &Path) -> Result<(), String> {
-    // Set mtime to 1 second ahead of the current mtime to guarantee the
-    // watcher always sees a change, regardless of filesystem time resolution.
-    let current = std::fs::metadata(site_toml)
-        .and_then(|m| m.modified())
-        .unwrap_or_else(|_| std::time::SystemTime::now());
-    let future = current + std::time::Duration::from_secs(1);
-    let ft = filetime::FileTime::from_system_time(future);
-    filetime::set_file_mtime(site_toml, ft).map_err(|e| format!("touch failed: {e}"))?;
-    Ok(())
 }
 
 // ── Service restart ───────────────────────────────────────────────────────────
@@ -125,7 +111,9 @@ pub fn restart_service(svc: &ServiceConfig) -> Value {
 
     let pid: u32 = match pid_text.trim().parse() {
         Ok(p) => p,
-        Err(_) => return json!({ "error": format!("invalid pid in {}: '{}'", svc.pid_file, pid_text.trim()) }),
+        Err(_) => {
+            return json!({ "error": format!("invalid pid in {}: '{}'", svc.pid_file, pid_text.trim()) })
+        }
     };
 
     let status = Command::new("kill")

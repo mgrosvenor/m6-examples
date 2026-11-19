@@ -5,10 +5,10 @@
 # Topology (all on loopback):
 #   Origin H2C (9000) ← cache nodes connect here (H2C, no TLS)
 #   Origin public (9001, TLS) ← direct access
-#   Cache SF (9002), NYC (9003), Chicago (9004), London (9005), Singapore (9006)
+#   Cache edge-a (9002), edge-b (9003), edge-c (9004), edge-d (9005), edge-e (9006)
 #
 # The cache nodes proxy all traffic to the origin H2C instance.
-# This mirrors production where cache nodes talk to Sydney over WireGuard H2C.
+# This mirrors production where cache nodes talk to the origin over WireGuard H2C.
 #
 # Reuses 07-dev-to-production's site content, auth setup, and backend configs.
 # Prerequisites: m6-http, m6-html, m6-file, m6-auth-server, m6-md,
@@ -21,52 +21,30 @@ M6="${M6:-$(cd "$SITE09/../../../m6" && pwd)}"
 EXAMPLES="${EXAMPLES:-$(cd "$SITE09/../.." && pwd)}"
 export PATH="$M6/target/release:$PATH"
 
+# Development keys and state: a private per-user directory, see dev-home.sh.
+. "$SITE09/../dev-home.sh"
+"$SITE09/../dev-keys.sh"
+
 # ── Require 07 to have been set up first ─────────────────────────────────────
-if [ ! -f "$SITE07/keys/auth.pub" ]; then
-    echo "ERROR: $SITE07/keys/auth.pub not found."
-    echo "Run examples/07-dev-to-production/dev.sh first to set up auth keys." >&2
+if [ ! -f $M6_DEV_HOME/07-dev-to-production/auth.db ]; then
+    echo "ERROR: $M6_DEV_HOME/07-dev-to-production/auth.db not found."
+    echo "Run examples/07-dev-to-production/dev.sh first to set up the auth database." >&2
     exit 1
 fi
 
-# ── TLS certs (shared by all local TLS instances) ─────────────────────────────
-mkdir -p "$SITE09/certs"
-if [ ! -f "$SITE09/certs/local.pem" ]; then
-    if command -v mkcert &>/dev/null; then
-        mkcert -install 2>/dev/null || true
-        mkcert -key-file "$SITE09/certs/local-key.pem" \
-               -cert-file "$SITE09/certs/local.pem" \
-               localhost 127.0.0.1
-    elif command -v openssl &>/dev/null; then
-        # No mkcert: fall back to a self-signed certificate.
-        #
-        # The only thing mkcert adds is a local CA your browser already trusts,
-        # which matters to a person clicking around and not to `curl -k` or to a
-        # test suite. This used to be a hard `exit 1`, and m6's build host has no
-        # mkcert -- the CI stage that runs this example only worked because rsync
-        # happened to carry a developer's own untracked keys/ directory. A check
-        # that depends on an untracked file is not a check.
-        echo "mkcert not found; generating a self-signed certificate with openssl."
-        echo "Your browser will warn about it. For one it trusts: brew install mkcert"
-        openssl req -x509 -newkey rsa:2048 -sha256 -days 365 -nodes \
-            -keyout "$SITE09/certs/local-key.pem" -out "$SITE09/certs/local.pem" \
-            -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" 2>/dev/null \
-            || { echo "ERROR: openssl could not write a certificate." >&2; exit 1; }
-    else
-        echo "ERROR: neither mkcert nor openssl found. Install one:" >&2
-        echo "  mkcert   - certificate your browser trusts (brew install mkcert)" >&2
-        echo "  openssl  - self-signed, browser warns" >&2
-        exit 1
-    fi
-fi
-
-# ── Expose 07's auth public key for configs/local/sydney.toml ────────────────
-# configs/local/sydney.toml sets public_key = "../keys/auth.pub". A relative
-# system-config public_key resolves against the site directory (site-origin),
-# so it points at $SITE09/keys/auth.pub
-mkdir -p "$SITE09/keys"
-if [ ! -f "$SITE09/keys/auth.pub" ]; then
-    cp "$SITE07/keys/auth.pub" "$SITE09/keys/auth.pub"
-fi
+# The origin's generation: the CMS publishes with a genid-write token, and each cache
+# node follows the origin with a genid-read token.
+STATE=$M6_DEV_HOME/09-global-deployment
+mkdir -p "$STATE/state"
+"$SITE09/../dev-token.sh" "$(m6_conf "$SITE07/configs/m6-auth.conf")" publisher genid-write "$STATE/genid-write.token"
+for edge in a b c d e; do
+    "$SITE09/../dev-token.sh" "$(m6_conf "$SITE07/configs/m6-auth.conf")" "reader-edge-$edge" genid-read "$STATE/genid-read-edge-$edge.token"
+done
+# 07's renderer config publishes to port 8443. Here the origin's TLS port is 9001.
+sed -e 's#https://localhost:8443/genid#https://localhost:9001/genid#' \
+    -e 's#127.0.0.1:8443#127.0.0.1:9001#' \
+    -e "s#$M6_DEV_HOME/07-dev-to-production/genid-write.token#$STATE/genid-write.token#" \
+    "$(m6_conf "$SITE07/configs/render-cms.conf")" > "$STATE/render-cms.conf"
 
 # ── Generate posts.json ────────────────────────────────────────────────────────
 m6-md "$SITE07/content/posts/" --output "$SITE07/data/posts.json"
@@ -77,7 +55,7 @@ for port in 9000 9001 9002 9003 9004 9005 9006; do
 done
 sleep 0.3
 rm -f /tmp/m6/m6-html*.sock /tmp/m6/m6-file*.sock /tmp/m6/m6-auth*.sock \
-       /tmp/m6/render-cms*.sock
+       /tmp/m6/check-m6-auth*.sock /tmp/m6/render-cms*.sock
 mkdir -p /tmp/m6
 
 # ── Backend services (07's content and config) ────────────────────────────────
@@ -90,11 +68,11 @@ M6_SOCKET_OVERRIDE=/tmp/m6/m6-file.sock \
 FILE_PID=$!
 
 M6_SOCKET_OVERRIDE=/tmp/m6/m6-auth.sock \
-    m6-auth-server "$SITE07" "$SITE07/configs/m6-auth.conf" &
+    m6-auth-server "$SITE07" "$(m6_conf "$SITE07/configs/m6-auth.conf")" &
 AUTH_PID=$!
 
 M6_SOCKET_OVERRIDE=/tmp/m6/render-cms.sock \
-    "$EXAMPLES/target/release/render-cms" "$SITE07" "$SITE07/configs/render-cms.conf" &
+    "$EXAMPLES/target/release/render-cms" "$SITE07" "$STATE/render-cms.conf" &
 RENDER_PID=$!
 
 ALL_PIDS="$HTML_PID $FILE_PID $AUTH_PID $RENDER_PID"
@@ -105,30 +83,32 @@ for i in $(seq 1 50); do
     [ -S /tmp/m6/m6-html.sock ] && \
     [ -S /tmp/m6/m6-file.sock ] && \
     [ -S /tmp/m6/m6-auth.sock ] && \
+    [ -S /tmp/m6/check-m6-auth.sock ] && \
     [ -S /tmp/m6/render-cms.sock ] && break
     sleep 0.2
 done
 
 # ── Origin — TLS (port 9001) + H2C backbone (port 9000) ──────────────────────
 # Single m6-http instance: bind = TLS for users, h2c_bind = cleartext for cache nodes
-m6-http "$SITE09/site-origin" "$SITE09/configs/local/sydney.toml" &
+STATE_DIRECTORY="$STATE/state" \
+    m6-http "$SITE09/site-origin" "$(m6_conf "$SITE09/configs/local/origin.toml")" &
 ORIGIN_PID=$!
 ALL_PIDS="$ALL_PIDS $ORIGIN_PID"
 
 # ── Cache nodes (ports 9002–9006, all proxy to origin H2C on 9000) ────────────
-m6-http "$SITE09/site-cache" "$SITE09/configs/local/cache-sf.toml" &
+m6-http "$SITE09/site-cache" "$(m6_conf "$SITE09/configs/local/cache-edge-a.toml")" &
 ALL_PIDS="$ALL_PIDS $!"
 
-m6-http "$SITE09/site-cache" "$SITE09/configs/local/cache-nyc.toml" &
+m6-http "$SITE09/site-cache" "$(m6_conf "$SITE09/configs/local/cache-edge-b.toml")" &
 ALL_PIDS="$ALL_PIDS $!"
 
-m6-http "$SITE09/site-cache" "$SITE09/configs/local/cache-chicago.toml" &
+m6-http "$SITE09/site-cache" "$(m6_conf "$SITE09/configs/local/cache-edge-c.toml")" &
 ALL_PIDS="$ALL_PIDS $!"
 
-m6-http "$SITE09/site-cache" "$SITE09/configs/local/cache-london.toml" &
+m6-http "$SITE09/site-cache" "$(m6_conf "$SITE09/configs/local/cache-edge-d.toml")" &
 ALL_PIDS="$ALL_PIDS $!"
 
-m6-http "$SITE09/site-cache" "$SITE09/configs/local/cache-singapore.toml" &
+m6-http "$SITE09/site-cache" "$(m6_conf "$SITE09/configs/local/cache-edge-e.toml")" &
 ALL_PIDS="$ALL_PIDS $!"
 
 trap "kill $ALL_PIDS 2>/dev/null; wait 2>/dev/null" EXIT
@@ -137,16 +117,16 @@ echo ""
 echo "┌─────────────────────────────────────────────────────────────┐"
 echo "│  6-node global deployment — local demo                      │"
 echo "├─────────────────────────────────────────────────────────────┤"
-echo "│  Origin (Sydney)                                            │"
+echo "│  Origin                                                     │"
 echo "│    H2C backbone : http://127.0.0.1:9000  (cache nodes only) │"
 echo "│    Public TLS   : https://127.0.0.1:9001                    │"
 echo "├─────────────────────────────────────────────────────────────┤"
 echo "│  Cache nodes                                                │"
-echo "│    San Francisco : https://127.0.0.1:9002                   │"
-echo "│    New York      : https://127.0.0.1:9003                   │"
-echo "│    Chicago       : https://127.0.0.1:9004                   │"
-echo "│    London        : https://127.0.0.1:9005                   │"
-echo "│    Singapore     : https://127.0.0.1:9006                   │"
+echo "│    edge-a       : https://127.0.0.1:9002                    │"
+echo "│    edge-b       : https://127.0.0.1:9003                    │"
+echo "│    edge-c       : https://127.0.0.1:9004                    │"
+echo "│    edge-d       : https://127.0.0.1:9005                    │"
+echo "│    edge-e       : https://127.0.0.1:9006                    │"
 echo "├─────────────────────────────────────────────────────────────┤"
 echo "│  CMS: https://127.0.0.1:9001/cms  (login: admin / admin)    │"
 echo "│  Each cache node proxies CMS to origin (no-store cache)     │"

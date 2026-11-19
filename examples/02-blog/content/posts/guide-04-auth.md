@@ -34,26 +34,23 @@ cd examples/04-auth
 set -e
 SITE="$(cd "$(dirname "$0")" && pwd)"
 
-# Generate signing keys
-mkdir -p "$SITE/keys"
-openssl ecparam -name prime256v1 -genkey -noout -out "$SITE/keys/auth.pem"
-openssl ec -in "$SITE/keys/auth.pem" -pubout -out "$SITE/keys/auth.pub"
-chmod 600 "$SITE/keys/auth.pem"
-echo "Keys generated."
+# Development keys and state: a private per-user directory, see dev-home.sh.
+. "$SITE/../dev-home.sh"
+"$SITE/../dev-keys.sh"
 
 # Create first admin user — database created automatically if absent
-m6-auth-cli "$SITE/configs/m6-auth.conf" user add admin --role admin
+m6-auth-cli "$(m6_conf "$SITE/configs/m6-auth.conf")" user add admin --role admin
 
 echo "Setup complete. Start the server with ./dev.sh"
 ```
 
-Run `setup.sh` once per environment. The private key stays on the server; the public key is read by m6-http for local JWT verification.
+Run `setup.sh` once per environment. The private key stays on the server and signs the tokens. m6-auth-server verifies them when m6-http asks.
 
 ## `configs/m6-auth.conf`
 
 ```toml
 [storage]
-path = "data/auth.db"
+path = "@M6_DEV_HOME@/04-auth/auth.db"
 
 [tokens]
 access_ttl  = 900       # 15 minutes
@@ -61,20 +58,19 @@ refresh_ttl = 2592000   # 30 days
 issuer      = "localhost"
 
 [keys]
-private_key = "keys/auth.pem"
-public_key  = "keys/auth.pub"
+private_key = "@M6_DEV_HOME@/dev/auth.pem"
+public_key  = "@M6_DEV_HOME@/dev/auth.pub"
 ```
 
 m6-auth manages its own SQLite database at `storage.path`. The access token is short-lived (15 min); the refresh token is long-lived (30 days).
 
 ## New entries in the system config
 
-`[auth]` names the key m6-http uses to verify tokens, which is a credential path, so it belongs in the system config (`configs/system-dev.toml`) and not in `site.toml`. A relative `public_key` resolves against the site directory.
+`[auth]` names the backend m6-http asks who a caller is, and it belongs in the system config (`configs/system-dev.toml`) and not in `site.toml`, because it describes this node. The backend is the check socket of m6-auth-server, declared in `site.toml` below.
 
 ```toml
 [auth]
-backend    = "m6-auth"
-public_key = "keys/auth.pub"
+backend = "m6-auth-check"
 ```
 
 ## New entries in `site.toml`
@@ -82,7 +78,13 @@ public_key = "keys/auth.pub"
 ```toml
 [[backend]]
 name    = "m6-auth"
-sockets = "/run/m6/m6-auth-*.sock"
+sockets = "/run/m6/m6-auth*.sock"
+
+# The check socket carries POST /check. Its name is the login socket's with a
+# `check-` prefix, which keeps it out of the login glob above.
+[[backend]]
+name    = "m6-auth-check"
+sockets = "/run/m6/check-m6-auth*.sock"
 
 [[route]]
 path    = "/login"
@@ -111,7 +113,7 @@ backend = "m6-html"
 require = "group:members"
 ```
 
-The `[auth]` block tells m6-http which public key to use for local JWT verification and which backend handles credential operations. Routes with `require` are enforced before m6-html is ever contacted.
+The `[auth]` block tells m6-http which backend to ask who a caller is: the check socket of m6-auth-server. Routes with `require` are enforced before m6-html is ever contacted.
 
 ## The cookie scheme
 
@@ -140,7 +142,7 @@ Set-Cookie: session=<access_token>;  HttpOnly; Secure; SameSite=Strict; Path=/; 
 Set-Cookie: refresh=<refresh_token>; HttpOnly; Secure; SameSite=Strict; Path=/auth/refresh; Max-Age=2592000
 ```
 
-The `session` cookie is sent on every request — m6-http verifies it locally against the public key. No network call. The `refresh` cookie is sent **only** to `POST /auth/refresh` due to its restricted `Path`. JavaScript can read neither cookie. No XSS exposure of tokens.
+The `session` cookie is sent on every request — m6-http sends it to the check socket, which verifies it and answers with the caller's current roles and groups. The `refresh` cookie is sent **only** to `POST /auth/refresh` due to its restricted `Path`. JavaScript can read neither cookie. No XSS exposure of tokens.
 
 ## Session expiry and transparent refresh
 
@@ -208,23 +210,22 @@ m6-auth-cli configs/m6-auth.conf user passwd alice
 m6-auth-cli configs/m6-auth.conf group add-member members alice
 
 # List users
-m6-auth-cli configs/m6-auth.conf user list
+m6-auth-cli configs/m6-auth.conf user ls
 ```
 
-m6-auth-cli reads the same conf as m6-auth. It writes directly to the SQLite database — run it while m6-auth is stopped, or accept that changes take effect on next request.
+m6-auth-cli reads the same conf as m6-auth-server. It writes directly to the SQLite database, and a change takes effect on the next check, because `POST /check` reads the database's current roles and groups.
 
 ## How m6-http enforces `require`
 
 For each request to a route with `require`:
 
 1. Extract JWT from `Authorization: Bearer` header, or the `session` cookie (header wins)
-2. Verify signature locally against `public_key` — no network call
-3. Check expiry
-4. Check `require` declaration: `group:<name>` or `role:<name>` against token claims
-5. Reject with 401 (no/invalid token) or 403 (insufficient claims)
-6. Valid? Forward request with token intact
+2. Send it to the check backend (`POST /check` on m6-auth-server's check socket), which verifies the signature, kind, issuer, audience and expiry
+3. Check the `require` declaration, `group:<name>` or `role:<name>`, against the roles and groups the check answered with
+4. Reject with 401 (no or invalid token) or 403 (insufficient claims): JSON for an API client, a redirect to `/login` for a browser
+5. Valid? Forward request with token intact
 
-Renderers receive the verified token claims as keys in the request context and can perform additional fine-grained checks.
+Renderers receive the verified identity as keys in the request context (`auth_username`, `auth_roles`, `auth_groups`) and can perform additional fine-grained checks.
 
 ---
 

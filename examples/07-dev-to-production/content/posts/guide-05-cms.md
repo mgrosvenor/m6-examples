@@ -1,7 +1,7 @@
 +++
 title   = "Guide 05: CMS Blog"
 date    = "2025-01-03"
-summary = "The full system: a public blog cached in RAM, an auth-protected CMS renderer, and a publish flow that touches site.toml to go live."
+summary = "The full system: a public blog cached in RAM, an auth-protected CMS renderer, and a publish flow that advances the site's generation to go live."
 tags    = ["guide", "tutorial", "cms", "custom-renderer"]
 cover   = "https://picsum.photos/seed/guide05/1200/500"
 +++
@@ -168,24 +168,30 @@ backend = "render-cms"
 require = "group:editors"
 ```
 
-`[[route_group]]` with `content/posts/*.json` handles routing for individual posts. New post files become routable when m6-http reloads after `site.toml` is touched on publish.
+`[[route_group]]` with `content/posts/*.json` handles routing for individual posts. m6-http expands the glob when it builds its route table at start. A post file a publish adds is routed because the publish ends with `POST /genid`, and `site.toml` itself is read once, at start: an edit to it takes a restart.
 
-`site.toml` has no `[auth]` because the key it names belongs to one node. It goes in the system config.
+`site.toml` has no `[auth]` because the backend it names belongs to one node. It goes in the system config.
 
 ## `configs/system-dev.toml`
 
 ```toml
 [server]
 bind     = "127.0.0.1:8443"
-tls_cert = "keys/dev.pem"
-tls_key  = "keys/dev-key.pem"
+tls_cert = "@M6_DEV_HOME@/dev/dev.pem"
+tls_key  = "@M6_DEV_HOME@/dev/dev-key.pem"
 
 [auth]
-backend    = "m6-auth"
-public_key = "keys/auth.pub"
+backend = "m6-auth-check"
+
+[genid]
+read_require  = "role:genid-read"
+write_require = "role:genid-write"
+
+[node]
+name = "dev"
 ```
 
-`[auth]` names the key m6-http uses to verify tokens, so it sits beside the other paths that describe this node. A relative `public_key` resolves against the site directory. Declare `[auth]` in one file only. If both files carry it, m6-http refuses to start and exits with status 2, reporting that `[auth]` is declared in both. If only `site.toml` carries it, m6-http starts and logs a warning.
+`[auth]` names the backend m6-http asks who a caller is: the check socket of m6-auth, declared as the `m6-auth-check` backend in `site.toml` (`sockets = "/tmp/m6/check-m6-auth*.sock"`). `[genid]` makes this node the source of the site's generation ID and names the claims that gate `/genid`: a token with the `genid-write` role may publish. Declare each table in one file only. A key in the file that does not own it stops m6-http at start with exit 2.
 
 ## `render-cms/Cargo.toml`
 
@@ -196,79 +202,41 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-m6-render  = { git = "https://github.com/m6/m6", tag = "v0.1.0", features = ["auth", "disk"] }
-serde_json = "1"
+m6-core        = { path = "../../../../m6/m6-core" }
+serde_json     = "1"
+comrak         = { version = "0.21", default-features = false }
+base64         = "0.22"
+rustls-pemfile = "2"
 ```
+
+`m6-core` is the one m6 crate a service links. It supplies routing, the request dictionary, templates and the pieces of an event loop. The service writes its own `main`, which is the loop, and its handlers.
 
 ## `render-cms/src/main.rs`
 
+The routes are a constant, in the order the `match` below reads them. `Site::load` compiles them at start, and each request that one of them answers comes back as `Handled::Code(index, req)`:
+
 ```rust
-use m6_render::prelude::*;
-use serde_json::{json, Value};
-use std::fs;
+const ROUTES: &[CodeRoute] = &[
+    CodeRoute { pattern: "/contact",              method: RouteMethod::Get },
+    CodeRoute { pattern: "/contact",              method: RouteMethod::Post },
+    CodeRoute { pattern: "/cms",                  method: RouteMethod::Get },
+    CodeRoute { pattern: "/cms/new",              method: RouteMethod::Get },
+    CodeRoute { pattern: "/cms/edit/{stem}",      method: RouteMethod::Get },
+    CodeRoute { pattern: "/api/drafts",           method: RouteMethod::Post },
+    CodeRoute { pattern: "/api/drafts/{stem}",    method: RouteMethod::Patch },
+    CodeRoute { pattern: "/api/publish/{stem}",   method: RouteMethod::Post },
+    CodeRoute { pattern: "/api/unpublish/{stem}", method: RouteMethod::Post },
+    CodeRoute { pattern: "/api/drafts/{stem}",    method: RouteMethod::Delete },
+    CodeRoute { pattern: "/api/posts/{stem}",     method: RouteMethod::Delete },
+];
+```
 
-fn main() -> Result<()> {
-    App::new()
-        .route_get("/cms",             handle_dashboard)
-        .route_get("/cms/new",         handle_new)
-        .route_get("/cms/edit/{stem}", handle_edit)
-        .route_post("/api/drafts",           handle_create_draft)
-        .route_patch("/api/drafts/{stem}",   handle_update_draft)
-        .route_post("/api/publish/{stem}",   handle_publish)
-        .route_post("/api/unpublish/{stem}", handle_unpublish)
-        .route_delete("/api/drafts/{stem}",  handle_delete_draft)
-        .route_delete("/api/posts/{stem}",   handle_delete_post)
-        .run()
-}
+`main` is the service's own event loop: start, run, stop. It loads the site, binds the socket, opens the signal descriptor, and then waits on one poll for the listener, the signals and every connection. Nothing in the run phase blocks. `docs/m6-app-anatomy.md` in the m6 repository walks through the loop line by line, and `main.rs` in this example is that loop with one addition: a publish waits on a `POST /genid`, which the same loop drives.
 
-fn handle_dashboard(req: &Request) -> Result<Response> {
-    let author    = req["auth_username"].as_str().unwrap_or("");
-    let drafts    = req.list_json("content/drafts/")?;
-    let published = req.list_json("content/posts/")?;
-    Response::render_with("templates/cms/dashboard.html", req, json!({
-        "drafts":    drafts,
-        "published": published,
-        "author":    author,
-    }))
-}
+A handler answers `Answer::Now(response)`, or `Answer::AfterPublish(response)` when it changed the site's files. The loop holds an `AfterPublish` answer, sends `POST /genid` to m6-http on the connection slot's own client, and writes the answer when m6-http has replied:
 
-fn handle_new(req: &Request) -> Result<Response> {
-    Response::render_with("templates/cms/editor.html", req, json!({"new": true}))
-}
-
-fn handle_edit(req: &Request) -> Result<Response> {
-    let stem = req["stem"].as_str().ok_or(Error::NotFound)?;
-    let post = req.read_json(&format!("content/drafts/{}.json", stem))
-        .or_else(|_| req.read_json(&format!("content/posts/{}.json", stem)))?;
-    Response::render_with("templates/cms/editor.html", req, post)
-}
-
-fn handle_create_draft(req: &Request) -> Result<Response> {
-    let body: Value = req.body_json()?;
-    let stem  = req["title"].as_str().unwrap_or("untitled").to_slug();
-    let draft = json!({
-        "stem":   stem,
-        "title":  body["title"],
-        "body":   body["body"],
-        "author": req["auth_username"],
-        "date":   today_iso8601(),
-    });
-    req.write_json(&format!("content/drafts/{}.json", stem), &draft)?;
-    Response::json_status(json!({"stem": stem}), 201)
-}
-
-fn handle_update_draft(req: &Request) -> Result<Response> {
-    let stem = req["stem"].as_str().ok_or(Error::NotFound)?;
-    let body: Value = req.body_json()?;
-    let path = format!("content/drafts/{}.json", stem);
-    let mut draft = req.read_json(&path)?;
-    if let Some(t) = body.get("title") { draft["title"] = t.clone(); }
-    if let Some(b) = body.get("body")  { draft["body"]  = b.clone(); }
-    req.write_json(&path, &draft)?;
-    Response::json(json!({"ok": true}))
-}
-
-fn handle_publish(req: &Request) -> Result<Response> {
+```rust
+fn handle_publish(req: &Request) -> Result<Answer> {
     let stem         = req["stem"].as_str().ok_or(Error::NotFound)?;
     let draft_path   = format!("content/drafts/{}.json", stem);
     let publish_path = format!("content/posts/{}.json", stem);
@@ -280,13 +248,12 @@ fn handle_publish(req: &Request) -> Result<Response> {
 
     req.write_json_atomic(&publish_path, &post)?;
     update_index(req)?;
-    req.touch_site_toml()?;   // triggers m6-http route reload
     let _ = fs::remove_file(req.site_path(&draft_path));
 
-    Response::json(json!({"published": true, "path": post["path"]}))
+    Ok(Answer::AfterPublish(Response::json(json!({"published": true, "path": post["path"]}))))
 }
 
-fn handle_unpublish(req: &Request) -> Result<Response> {
+fn handle_unpublish(req: &Request) -> Result<Answer> {
     let stem         = req["stem"].as_str().ok_or(Error::NotFound)?;
     let publish_path = format!("content/posts/{}.json", stem);
     let draft_path   = format!("content/drafts/{}.json", stem);
@@ -294,13 +261,34 @@ fn handle_unpublish(req: &Request) -> Result<Response> {
     let mut post = req.read_json(&publish_path)?;
     post["draft"] = json!(true);
     req.write_json(&draft_path, &post)?;
-    fs::remove_file(req.site_path(&publish_path))?;
+    let _ = fs::remove_file(req.site_path(&publish_path));
     update_index(req)?;
-    req.touch_site_toml()?;
 
-    Response::json(json!({"unpublished": true}))
+    Ok(Answer::AfterPublish(Response::json(json!({"unpublished": true}))))
 }
 ```
+
+The handlers do not touch `site.toml`: m6 services read their files once, at start, and a touch reloads nothing. The `POST /genid` is what makes every backend read the new content.
+
+## `configs/render-cms.conf`
+
+```toml
+global_params = ["data/site.json"]
+
+[[route]]
+path  = "/cms"
+cache = "no-store"
+# ... one entry per route above
+
+[genid]
+url        = "https://localhost:8443/genid"
+connect    = "127.0.0.1:8443"
+token_file = "@M6_DEV_HOME@/05-cms/genid-write.token"
+ca_file    = "@M6_DEV_HOME@/dev/ca.pem"
+timeout_ms = 10000
+```
+
+`[genid]` names the publish URL, the address to connect to, the file holding a token with the `genid-write` role (`dev.sh` mints it with `m6-auth-cli ... token create`), the certificate to trust (a development node signs its own; in production leave `ca_file` out and the system's certificate store is used) and how long a publish may take. A missing or empty token file stops the renderer at start.
 
 ## CMS API
 
@@ -309,7 +297,7 @@ fn handle_unpublish(req: &Request) -> Result<Response> {
 | `POST` | `/api/drafts` | Create draft → returns `{"stem":"..."}` |
 | `PATCH` | `/api/drafts/{stem}` | Update draft fields |
 | `DELETE` | `/api/drafts/{stem}` | Delete draft permanently |
-| `POST` | `/api/publish/{stem}` | Publish draft → moves to posts, touches site.toml |
+| `POST` | `/api/publish/{stem}` | Publish draft → moves to posts, then `POST /genid` |
 | `POST` | `/api/unpublish/{stem}` | Move published post back to drafts |
 | `DELETE` | `/api/posts/{stem}` | Delete published post permanently |
 
@@ -321,10 +309,11 @@ The dashboard shows **Edit / Delete** for drafts and **View / Edit / Unpublish /
 2. Editor clicks **Publish** → `POST /api/publish/{stem}`:
    - render-cms renders markdown → HTML, writes `content/posts/{stem}.json`
    - render-cms rebuilds `data/posts.json` index
-   - render-cms touches `site.toml` — m6-http reloads routes, `/blog/{stem}` becomes live
+   - render-cms sends `POST /genid` to m6-http, which reloads every backend, flushes its cache and advances the generation — `/blog/{stem}` becomes live
+   - the answer to the editor waits for that request, so a post reported as published is live
    - render-cms deletes `content/drafts/{stem}.json`
-3. Browser redirects to `/blog/{stem}`
-4. m6-http: route now live, cache miss → m6-html renders → m6-http caches
+3. Browser goes to `/blog/{stem}`
+4. m6-http: cache empty after the flush, cache miss → m6-html renders → m6-http caches
 5. Every subsequent request to `/blog/{stem}`: cache hit — RAM only
 
 <pre class="mermaid">
@@ -339,9 +328,11 @@ sequenceDiagram
     Editor->>rcms: PATCH /api/drafts/my-post (save draft)
     Editor->>rcms: POST /api/publish/my-post
     rcms->>Disk: write content/posts/my-post.json
-    rcms->>Disk: touch site.toml
-    Disk-->>mhttp: inotify: route reload + cache evict
-    rcms->>Browser: redirect /blog/my-post
+    rcms->>mhttp: POST /genid (write token)
+    mhttp->>mhtml: reload
+    mhttp-->>rcms: 200, new generation (cache flushed)
+    rcms->>Editor: {"published": true}
+    Editor->>Browser: open /blog/my-post
     Browser->>mhttp: GET /blog/my-post
     mhttp->>mhtml: cache miss, render
     mhtml->>mhttp: response
@@ -354,8 +345,8 @@ sequenceDiagram
 |---|---|
 | Public post (cached) | < 1 ms — RAM only |
 | Public post (cache miss) | ~5 ms — m6-html reads JSON, renders, caches |
-| CMS dashboard | ~10 ms — JWT verified locally, render-cms reads posts + drafts directory |
-| Publish | ~5 ms — one atomic file write, one inotify event |
+| CMS dashboard | one check of the token by m6-auth, then render-cms reads the posts and drafts directories |
+| Publish | one atomic file write, then one `POST /genid` whose answer the editor waits for |
 
 The public blog path never touches disk after the first request.
 
@@ -367,11 +358,13 @@ set -e
 SITE="$(cd "$(dirname "$0")" && pwd)"
 trap 'kill $(jobs -p) 2>/dev/null' EXIT
 
-m6-html    "$SITE" "$SITE/configs/m6-html.conf" &
-m6-file    "$SITE" "$SITE/configs/m6-file.conf" &
-m6-auth    "$SITE" "$SITE/configs/m6-auth.conf" &
-"$SITE/target/release/render-cms" "$SITE" "$SITE/configs/render-cms.conf" &
-m6-http    "$SITE" "$SITE/configs/system-dev.toml" &
+# keys, auth database and the publisher token (examples/dev-token.sh)
+m6-html        "$SITE" "$SITE/configs/m6-html.conf" &
+m6-file        "$SITE" "$SITE/configs/m6-file.conf" &
+m6-auth-server "$SITE" "$(m6_conf "$SITE/configs/m6-auth.conf")" &   # login and check sockets
+"$EXAMPLES/target/release/render-cms" "$SITE" "$(m6_conf "$SITE/configs/render-cms.conf")" &
+# the source node writes its generation ID under STATE_DIRECTORY
+STATE_DIRECTORY="$M6_DEV_HOME/05-cms/state" m6-http "$SITE" "$(m6_conf "$SITE/configs/system-dev.toml")" &
 
 echo "Running at https://localhost:8443"
 echo "CMS at    https://localhost:8443/cms"

@@ -24,71 +24,23 @@ info "Building m6 binaries..."
 info "Building render-cms..."
 (cd "$EXAMPLES" && cargo build --release -p render-cms --quiet)
 
-# ── TLS certs ─────────────────────────────────────────────────────────────────
-mkdir -p "$SITE/keys"
-if [ ! -f "$SITE/keys/dev.pem" ]; then
-    info "Generating dev TLS certs..."
-    if command -v mkcert &>/dev/null; then
-        mkcert -install 2>/dev/null || true
-        mkcert -key-file "$SITE/keys/dev-key.pem" \
-               -cert-file "$SITE/keys/dev.pem" \
-               localhost 127.0.0.1
-    elif command -v openssl &>/dev/null; then
-        # No mkcert: fall back to a self-signed certificate.
-        #
-        # The only thing mkcert adds is a local CA your browser already trusts,
-        # which matters to a person clicking around and not to `curl -k` or to a
-        # test suite. This used to be a hard `exit 1`, and m6's build host has no
-        # mkcert -- the CI stage that runs this example only worked because rsync
-        # happened to carry a developer's own untracked keys/ directory. A check
-        # that depends on an untracked file is not a check.
-        echo "mkcert not found; generating a self-signed certificate with openssl."
-        echo "Your browser will warn about it. For one it trusts: brew install mkcert"
-        openssl req -x509 -newkey rsa:2048 -sha256 -days 365 -nodes \
-            -keyout "$SITE/keys/dev-key.pem" -out "$SITE/keys/dev.pem" \
-            -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" 2>/dev/null \
-            || { echo "ERROR: openssl could not write a certificate." >&2; exit 1; }
-    else
-        echo "ERROR: neither mkcert nor openssl found. Install one:" >&2
-        echo "  mkcert   - certificate your browser trusts (brew install mkcert)" >&2
-        echo "  openssl  - self-signed, browser warns" >&2
-        exit 1
-    fi
-fi
-
-# ── Auth keys ─────────────────────────────────────────────────────────────────
-if [ ! -f "$SITE/keys/auth.pem" ]; then
-    info "Generating auth signing keys..."
-    # `ec_param_enc:named_curve` is not redundant: macOS's LibreSSL writes explicit
-    # curve parameters where OpenSSL writes the prime256v1 OID, and the token signer
-    # only accepts the named form. Without it every login on a Mac fails with
-    # "JWT encode error: InvalidEcdsaKey" even with the right password. The long
-    # version is in examples/05-cms/setup.sh.
-    openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -pkeyopt ec_param_enc:named_curve -out "$SITE/keys/auth.pem"
-    openssl pkey -in "$SITE/keys/auth.pem" -pubout -out "$SITE/keys/auth.pub"
-    chmod 600 "$SITE/keys/auth.pem"
-fi
+# Development keys and state: a private per-user directory, see dev-home.sh.
+. "$SITE/../dev-home.sh"
+"$SITE/../dev-keys.sh"
 
 # ── Auth database ─────────────────────────────────────────────────────────────
-#
-# BOTH paths are checked, and that is not belt and braces. `configs/m6-auth.conf`
-# says `path = "data/auth.db"`, and m6-auth-server resolves that relative to the
-# CONFIG FILE's directory, not the site root, so the database is created at
-# configs/data/auth.db. This script only looked at $SITE/data/auth.db, which is
-# never written, so every run after the first ran `user add admin` again, got
-# "error: username 'admin' already exists", and died under `set -e` before
-# starting anything. Stopping the example and running ./dev.sh again left a
-# reader with nothing running and an error about a user they did not create.
-#
-# 04-auth and 07-dev-to-production already checked both. This one was missed.
-mkdir -p "$SITE/data"
-if [ ! -f "$SITE/configs/data/auth.db" ] && [ ! -f "$SITE/data/auth.db" ]; then
+if [ ! -f $M6_DEV_HOME/05-cms/auth.db ]; then
     info "Creating admin user (password: admin)..."
-    m6-auth-cli "$SITE/configs/m6-auth.conf" user add admin --password admin
-    m6-auth-cli "$SITE/configs/m6-auth.conf" group add editors
-    m6-auth-cli "$SITE/configs/m6-auth.conf" group member add editors admin
+    m6-auth-cli "$(m6_conf "$SITE/configs/m6-auth.conf")" user add admin --password admin
+    m6-auth-cli "$(m6_conf "$SITE/configs/m6-auth.conf")" group add editors
+    m6-auth-cli "$(m6_conf "$SITE/configs/m6-auth.conf")" group member add editors admin
 fi
 
+# ── Publisher token ───────────────────────────────────────────────────────────
+# The renderer sends POST /genid with it (see [genid] in its config).
+"$SITE/../dev-token.sh" "$(m6_conf "$SITE/configs/m6-auth.conf")" publisher genid-write $M6_DEV_HOME/05-cms/genid-write.token
+
+# Run again after editing a post, then restart m6-html so it reads the new file.
 # ── Generate posts.json from markdown ─────────────────────────────────────────
 if command -v m6-md &>/dev/null; then
     info "Generating posts.json..."
@@ -100,19 +52,9 @@ mkdir -p "$SITE/logs"
 mkdir -p /tmp/m6
 
 lsof -ti :8443 2>/dev/null | xargs kill -9 2>/dev/null || true
-# Kill only THIS example's own processes.
-#
-# This used to be `pkill -x m6-http; pkill -x m6-html; ...`, which matches by
-# process name across the whole machine. Anyone with another m6 site running --
-# their own site, a preview instance, a multi-node local fleet -- lost all of it
-# the moment they started this example, with no warning and nothing in the log
-# saying what had happened. It killed a running seven-node local fleet exactly
-# that way.
-#
-# `pgrep -f "$SITE"` matches the site directory in the command line instead, so
-# it can only ever reach processes started for this example. The port holder on
-# the bind address is killed separately above, because a stale process from an
-# earlier run of THIS example is the case the cleanup is actually for.
+# Kill only this example's own processes: matching the site directory in the
+# command line cannot reach another m6 on the machine. The port holder is killed
+# above, to clear a stale run of this example.
 kill_own() {
     local pid
     for pid in $(pgrep -f "$SITE" 2>/dev/null || true); do
@@ -123,7 +65,7 @@ kill_own() {
 kill_own
 sleep 0.3
 
-rm -f /tmp/m6/m6-html*.sock /tmp/m6/m6-file*.sock /tmp/m6/m6-auth*.sock /tmp/m6/render-cms*.sock
+rm -f /tmp/m6/m6-html*.sock /tmp/m6/m6-file*.sock /tmp/m6/m6-auth*.sock /tmp/m6/check-m6-auth*.sock /tmp/m6/render-cms*.sock
 
 # ── Start services ────────────────────────────────────────────────────────────
 info "Starting m6-html..."
@@ -138,29 +80,24 @@ FILE_PID=$!
 
 info "Starting m6-auth-server..."
 M6_SOCKET_OVERRIDE=/tmp/m6/m6-auth.sock \
-    m6-auth-server "$SITE" "$SITE/configs/m6-auth.conf" >> "$SITE/logs/m6-auth.log" 2>&1 &
+    m6-auth-server "$SITE" "$(m6_conf "$SITE/configs/m6-auth.conf")" >> "$SITE/logs/m6-auth.log" 2>&1 &
 AUTH_PID=$!
+
+# m6-auth-server also binds the check socket beside this one (check-<name>),
+# which answers POST /check for m6-http: every `require` and the source
+# node's /genid ask it who the caller is.
 
 info "Starting render-cms..."
 M6_SOCKET_OVERRIDE=/tmp/m6/render-cms.sock \
-    "$EXAMPLES/target/release/render-cms" "$SITE" "$SITE/configs/render-cms.conf" >> "$SITE/logs/render-cms.log" 2>&1 &
+    "$EXAMPLES/target/release/render-cms" "$SITE" "$(m6_conf "$SITE/configs/render-cms.conf")" >> "$SITE/logs/render-cms.log" 2>&1 &
 CMS_PID=$!
 
-if command -v m6-md &>/dev/null; then
-    info "Starting m6-md (watch mode)..."
-    m6-md "$SITE/content/posts/" --output "$SITE/data/posts.json" \
-        --watch --touch "$SITE/site.toml" >> "$SITE/logs/m6-md.log" 2>&1 &
-    MD_PID=$!
-else
-    MD_PID=""
-fi
-
-trap 'echo ""; info "Stopping..."; kill $HTML_PID $FILE_PID $AUTH_PID $CMS_PID ${MD_PID:-} $HTTP_PID 2>/dev/null; wait 2>/dev/null' EXIT
+trap 'echo ""; info "Stopping..."; kill $HTML_PID $FILE_PID $AUTH_PID $CMS_PID $HTTP_PID 2>/dev/null; wait 2>/dev/null' EXIT
 
 # Wait for backend sockets
 echo -n "Waiting for backend sockets"
 for i in $(seq 1 30); do
-    if [[ -S /tmp/m6/m6-html.sock && -S /tmp/m6/m6-file.sock && -S /tmp/m6/m6-auth.sock && -S /tmp/m6/render-cms.sock ]]; then
+    if [[ -S /tmp/m6/m6-html.sock && -S /tmp/m6/m6-file.sock && -S /tmp/m6/m6-auth.sock && -S /tmp/m6/check-m6-auth.sock && -S /tmp/m6/render-cms.sock ]]; then
         echo " ready."
         break
     fi
@@ -169,7 +106,9 @@ for i in $(seq 1 30); do
 done
 
 info "Starting m6-http..."
-m6-http "$SITE" "$SITE/configs/system-dev.toml" >> "$SITE/logs/m6-http.log" 2>&1 &
+mkdir -p $M6_DEV_HOME/05-cms/state
+STATE_DIRECTORY=$M6_DEV_HOME/05-cms/state \
+    m6-http "$SITE" "$(m6_conf "$SITE/configs/system-dev.toml")" >> "$SITE/logs/m6-http.log" 2>&1 &
 HTTP_PID=$!
 
 # Wait for server readiness
@@ -206,7 +145,6 @@ echo "          $SITE/logs/m6-html.log"
 echo "          $SITE/logs/m6-file.log"
 echo "          $SITE/logs/m6-auth.log"
 echo "          $SITE/logs/render-cms.log"
-[ -n "${MD_PID:-}" ] && echo "          $SITE/logs/m6-md.log"
 echo ""
 
 wait

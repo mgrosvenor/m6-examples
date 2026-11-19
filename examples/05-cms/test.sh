@@ -16,20 +16,11 @@
 #
 # ── There are no skips ───────────────────────────────────────────────────────
 #
-# Every check has exactly one expected answer. The previous version of this file
-# had five that accepted a range -- "302 or 401 or 403", "may require a valid
-# token", "session may persist on server" -- and each one was hiding something:
-#
-#   - a check that passed on either answer reported the post-logout state as
-#     fine while never establishing what it was
-#   - `GET /auth/refresh` was reported as a possible token problem. The endpoint
-#     is POST-only, so the GET was a 404 and always would be
-#   - the token check used `grep -oP`, a GNU extension. On macOS that is
-#     "invalid option -- P", so it printed "token not found, may use httpOnly"
-#     on every run of a working server
-#
-# A check that cannot fail is not a check. If something here cannot be
-# established, it fails and says so.
+# Every check has exactly one expected answer. A check that accepts a range
+# ("302 or 401 or 403") reports a state it never established, and a check that
+# cannot fail is not a check. If something here cannot be established, it fails
+# and says so. Nothing relies on GNU-only options such as `grep -P`, so the
+# suite runs the same on macOS and Linux.
 #
 # ── What is deliberately not covered ─────────────────────────────────────────
 #
@@ -127,7 +118,7 @@ check_nonempty() {
 # Polls until the snippet exits 0, then passes and says how long it took; fails
 # when the budget is gone. Replaces `sleep 2`.
 #
-# Publishing writes a JSON file, rebuilds the index and touches site.toml, and
+# Publishing writes a JSON file, rebuilds the index and sends `POST /genid`, and
 # m6-http and m6-html then reload. How long that takes depends on the machine.
 # A fixed sleep encodes one machine's answer: 2 seconds was enough on a laptop
 # and not on m6's build host under load, where this suite reported that a
@@ -192,8 +183,7 @@ fi
 
 # ── 1. Both wire protocols ───────────────────────────────────────────────────
 #
-# The old suite pinned --http1.1 for everything, so HTTP/2 was never once
-# exercised by the example that runs the full stack.
+# The rest of the suite pins --http1.1; this section exercises both protocols.
 
 section "1. HTTP/1.1 and HTTP/2"
 
@@ -237,10 +227,9 @@ check "GET an unrouted path is a real 404" \
 
 # ── 3. Static assets, through m6-file ────────────────────────────────────────
 #
-# Every one of these was a 502 until 2026-09-14: m6-file became an `App` service
-# and every route has to name its handler, so the example's config was refused at
-# startup and the service exited before binding. Nothing in the suite noticed,
-# because the suite had no asset check that could tell 502 from 200.
+# Each asset route has to name m6-file's `files` handler. A config that does not
+# is refused at start, so the service never binds and every asset answers 502.
+# The checks below tell 502 from 200.
 
 section "3. Static assets"
 
@@ -421,15 +410,9 @@ fi
 
 # ── 12. The publish lifecycle ────────────────────────────────────────────────
 #
-# The part the old suite got wrong. It read the API's own reply -- "the response
-# said unpublished, therefore the post is unpublished" -- and never asked the
-# public site. Unpublishing was in fact doing nothing: `update_index` worked out
-# which posts belonged to the CMS from the files still present, and the file had
-# just been deleted, so the entry was reclassified as markdown-sourced and
-# preserved. The post stayed listed and stayed readable.
-#
-# So every step here is checked against what a visitor sees, not against what the
-# API claims it did.
+# Every step is checked against what a visitor sees, not against what the API
+# says it did: the reply "unpublished" proves nothing about the public site.
+# The post must leave /blog and stop serving its body.
 
 section "12. Draft, publish, unpublish"
 
@@ -465,8 +448,9 @@ pubresp=$(authed -X POST "$BASE/api/publish/$STEM" -w '\n%{http_code}')
 pubcode="${pubresp##*$'\n'}"
 check "POST /api/publish/<stem>" "$pubcode" "200"
 
-# Publishing touches site.toml, which reloads the routes and drops the cached
-# index. Wait for the effect rather than for a duration.
+# Publishing sends `POST /genid`, which reloads the backends and empties the
+# cache. The answer waits for it, and the poll below still states the
+# requirement rather than a duration.
 wait_for "the published post reaches /blog" 30 \
     "$(printf '%s' "${CURL[*]}") '$BASE/blog' | grep -qF '$STEM'"
 
@@ -474,19 +458,13 @@ check "the published post is readable" "$(code "$BASE/blog/$STEM")" "200"
 check_contains "the published post serves its body" "$(body "$BASE/blog/$STEM")" "$MARKER"
 check_contains "the published post is listed on /blog" "$(body "$BASE/blog")" "$STEM"
 
-# One touch just ahead of the call, so the touch the unpublish makes follows
-# within a few milliseconds of another. On Linux a single touch already reports
-# twice to the watcher, and a backend that holds the second report reloads after
-# m6-http has cleared its cache. This makes the same close pair on every
-# platform, so the suite exercises that gap instead of depending on the host.
-touch "$SITE/site.toml"
 unpubresp=$(authed -X POST "$BASE/api/unpublish/$STEM" -w '\n%{http_code}')
 unpubcode="${unpubresp##*$'\n'}"
 check "POST /api/unpublish/<stem>" "$unpubcode" "200"
 wait_for "the unpublished post leaves /blog" 30 \
     "! $(printf '%s' "${CURL[*]}") '$BASE/blog' | grep -qF '$STEM'"
 
-# The three checks that matter, and the three the old suite did not make.
+# The checks that matter: the public site, not the API reply.
 check_absent "an unpublished post is no longer listed on /blog" \
     "$(body "$BASE/blog")" "$STEM"
 check_absent "an unpublished post no longer serves its body" \
@@ -517,10 +495,8 @@ check "the test leaves no content behind" "$left" "0"
 
 section "13. Logout"
 
-# -b and -c together, so the jar is updated by the response. The old suite passed
-# only -b, so the cookie-clearing Set-Cookie headers were read and thrown away,
-# the stale token kept being sent, and the check was written off as "the session
-# may persist on the server".
+# -b and -c together, so the jar is updated by the response: the cookie-clearing
+# Set-Cookie headers must replace the stale token, or it keeps being sent.
 loh=$(curl -sk --http1.1 -b "$JAR" -c "$JAR" -D - -o /dev/null \
     -X POST "$BASE/auth/logout" | tr -d '\r')
 check "POST /auth/logout redirects" "$(printf '%s\n' "$loh" | grep -c '^HTTP/.* 302')" "1"
@@ -534,15 +510,9 @@ check "after logout the CMS is refused" "$(authed_code "$BASE/cms")" "401"
 
 # ── 14. The login throttle ───────────────────────────────────────────────────
 #
-# m6-auth-server allows a number of FAILED logins per IP per window. Two
-# properties, and both used to be wrong:
-#
-#   - it counted every login, success included, and never cleared the count. Six
-#     logins in fifteen minutes locked the IP out whether or not any password was
-#     wrong, which made this suite unreliable by construction: it logs in several
-#     times, so the third run inside the window got 429 and every authenticated
-#     check after it failed while pointing at authentication.
-#   - the limits were two `const`s, so nothing could ask for a different budget.
+# m6-auth-server allows a number of FAILED logins per IP per window. Only
+# failures count, and a correct password clears the count, so this suite can log
+# in many times without locking itself out. The limits come from the config.
 #
 # This example's m6-auth.conf sets a short window on purpose, so the recovery can
 # be measured rather than waited out. Production leaves the section out.

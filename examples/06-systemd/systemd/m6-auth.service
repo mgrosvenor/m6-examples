@@ -8,10 +8,16 @@ User=m6
 Group=m6
 RuntimeDirectory=m6
 RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
 
-ExecStart=/usr/local/bin/m6-auth \
+ExecStart=/usr/local/bin/m6-auth-server \
     /var/www/my-blog \
-    /var/www/my-blog/configs/m6-auth.conf
+    /etc/m6/m6-auth.conf
+
+LoadCredential=auth.pem:/etc/m6/auth.pem
+LoadCredential=auth.pub:/etc/m6/auth.pub
+StateDirectory=m6-auth
+StateDirectoryMode=0700
 
 Restart=on-failure
 RestartSec=2
@@ -21,7 +27,7 @@ SyslogIdentifier=m6-auth
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/run/m6 /var/www/my-blog/data
+ReadWritePaths=/run/m6
 ReadOnlyPaths=/var/www/my-blog /etc/m6
 
 [Install]

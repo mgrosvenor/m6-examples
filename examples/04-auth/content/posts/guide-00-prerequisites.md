@@ -8,7 +8,7 @@ cover   = "https://picsum.photos/seed/guide00/1200/500"
 
 This is the start of a seven-part guide that walks through every m6 example, from a bare static site to a full CMS running under systemd.
 
-m6 is an integrated system for building and serving websites. It covers the whole journey — from writing content in Markdown, through template rendering, to an in-memory cache that serves pre-compressed responses directly from RAM. Each part is designed to work with the others: the cache knows what each URL depends on, the renderer produces output the cache can serve directly, and the file watcher triggers precise eviction when content changes. You could assemble something similar from nginx, Varnish, a template engine, and a Markdown converter, but you'd be managing four mental models and four integration surfaces. m6 is one system with one config format and one set of concepts across the whole stack.
+m6 is an integrated system for building and serving websites. It covers the whole journey — from writing content in Markdown, through template rendering, to an in-memory cache that serves pre-compressed responses directly from RAM. Each part is designed to work with the others: the renderer produces output the cache can serve directly, and one request to m6-http, `POST /genid`, reloads every backend and empties the cache when content changes. You could assemble something similar from nginx, Varnish, a template engine, and a Markdown converter, but you'd be managing four mental models and four integration surfaces. m6 is one system with one config format and one set of concepts across the whole stack.
 
 **In this guide:**
 
@@ -26,15 +26,16 @@ m6 is an integrated system for building and serving websites. It covers the whol
 ## Install the binaries
 
 ```bash
-cargo install m6-http m6-html m6-file m6-auth
+cargo install m6-http m6-html m6-file m6-auth-server m6-auth-cli
 ```
 
-This installs four binaries to `~/.cargo/bin/`:
+This installs five binaries to `~/.cargo/bin/`:
 
 - **m6-http** — in-memory response cache, router, and reverse proxy. The only public-facing process. Most requests in production are answered entirely from its RAM cache — backends are only contacted on cache misses.
 - **m6-html** — renders HTML from Tera templates and JSON data files.
 - **m6-file** — serves files from the filesystem.
-- **m6-auth** — issues and verifies JWTs, manages credentials.
+- **m6-auth-server** — issues and verifies JWTs, answers m6-http's token checks, manages credentials.
+- **m6-auth-cli** — creates users, groups and API tokens in the auth database.
 
 For the blog examples you'll also want `m6-md`, which converts Markdown files to the JSON format m6-html expects:
 
@@ -54,7 +55,7 @@ mkcert -install
 mkcert localhost 127.0.0.1
 ```
 
-You do not need to run `mkcert localhost` yourself. Each example's `dev.sh` script issues its own certificate on first run into the example's `keys/` directory as `keys/dev.pem` and `keys/dev-key.pem`, and the example's `configs/system-dev.toml` points at them. The `mkcert -install` step above is the only one you do by hand. If `mkcert` is missing, `dev.sh` falls back to a self-signed certificate from `openssl` and your browser will warn about it.
+You do not need to run `mkcert localhost` yourself. Each example's `dev.sh` runs `examples/dev-keys.sh`, which writes the development certificate and auth keys to `dev/` in `${XDG_RUNTIME_DIR:-${TMPDIR:-$HOME/.cache}}/m6`, a directory only you can use (mode 700; `M6_DEV_HOME` overrides the location) on first run. The example's `configs/system-dev.toml` names that directory as `@M6_DEV_HOME@`, because m6 reads absolute paths and expands no variables, and `dev.sh` writes a copy with the real path for m6-http to read. The `mkcert -install` step above is the only one you do by hand. If `mkcert` is missing, `dev-keys.sh` falls back to a self-signed certificate from `openssl` and your browser will warn about it.
 
 ## Clone the examples
 
@@ -63,7 +64,7 @@ git clone https://github.com/m6/m6-examples
 cd m6-examples
 ```
 
-Now you have all five examples ready to run. Each is self-contained: its own `site.toml`, its own configs, its own templates and data. Each issues its own TLS certificate under its own `keys/` directory.
+Now you have all five examples ready to run. Each is self-contained: its own `site.toml`, its own configs, its own templates and data. Each reads its TLS certificate from `dev/` in that same private directory, written by `examples/dev-keys.sh`.
 
 ## How the examples are structured
 
@@ -99,4 +100,4 @@ Every example has a `dev.sh` that starts all the required processes and waits. `
 
 ---
 
-**← [m6-html and m6-render](/blog/m6-render-deep-dive)** | **[Example 01 — Static Site](/blog/guide-01-static-site) →**
+**← [m6-html and m6-core](/blog/m6-render-deep-dive)** | **[Example 01 — Static Site](/blog/guide-01-static-site) →**

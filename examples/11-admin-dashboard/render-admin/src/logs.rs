@@ -15,8 +15,10 @@ pub fn logs_blob(log_path: &Path, n: usize, offset: Option<u64>) -> Value {
     if let Some(off) = offset.filter(|&o| o > 0) {
         // Incremental read: only bytes since `off`.
         let mut f = match std::fs::File::open(log_path) {
-            Ok(f)  => f,
-            Err(e) => return json!({ "error": format!("cannot read log: {e}"), "lines": [], "end_offset": 0 }),
+            Ok(f) => f,
+            Err(e) => {
+                return json!({ "error": format!("cannot read log: {e}"), "lines": [], "end_offset": 0 })
+            }
         };
         if f.seek(SeekFrom::Start(off)).is_err() {
             return json!({ "lines": [], "end_offset": file_len });
@@ -29,8 +31,10 @@ pub fn logs_blob(log_path: &Path, n: usize, offset: Option<u64>) -> Value {
 
     // Initial load: last `n` lines + end offset.
     let text = match std::fs::read_to_string(log_path) {
-        Ok(t)  => t,
-        Err(e) => return json!({ "error": format!("cannot read log: {e}"), "lines": [], "end_offset": 0, "total_lines": 0 }),
+        Ok(t) => t,
+        Err(e) => {
+            return json!({ "error": format!("cannot read log: {e}"), "lines": [], "end_offset": 0, "total_lines": 0 })
+        }
     };
     let all: Vec<&str> = text.lines().collect();
     let total = all.len();

@@ -8,6 +8,7 @@ User=m6
 Group=m6
 RuntimeDirectory=m6
 RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
 
 ExecStart=/usr/local/bin/m6-file \
     /var/www/my-blog \

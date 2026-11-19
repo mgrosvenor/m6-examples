@@ -24,8 +24,12 @@ export PATH="$PWD/target/release:$PATH"
 mkcert -install
 ```
 
-Each example's `dev.sh` issues its own certificate into that example's `keys/` on
-first run, so there is nothing to place or symlink by hand.
+Each example's `dev.sh` runs `examples/dev-keys.sh`, which writes the development
+certificate and auth keys to `dev/` in a private per-user directory on first run,
+so there is nothing to place or symlink by hand. The directory is
+`${XDG_RUNTIME_DIR:-${TMPDIR:-$HOME/.cache}}/m6`, created with mode 700; set
+`M6_DEV_HOME` to use another. Each example's configs name it as `@M6_DEV_HOME@`,
+and its `dev.sh` writes a copy with the real path for m6 to read.
 
 ### Check the install
 
@@ -74,8 +78,7 @@ cargo build --release -p render-contact
 ```
 
 `dev.sh` stops only the processes belonging to its own example, so another m6
-site on the same machine keeps running. It used to run `pkill -x m6-http`, which
-matches by name across the whole box and took down anything else you had up.
+site on the same machine keeps running.
 
 ## Running the tests
 
