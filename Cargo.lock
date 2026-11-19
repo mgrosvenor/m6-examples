@@ -2184,15 +2184,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "render-contact-auth"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "m6-core",
- "serde_json",
-]
-
-[[package]]
 name = "resolv-conf"
 version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"

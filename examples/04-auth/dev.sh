@@ -7,6 +7,10 @@ M6="${M6:-$(cd "$SITE/../../../m6" && pwd)}"
 EXAMPLES="${EXAMPLES:-$(cd "$SITE/../.." && pwd)}"
 export PATH="$M6/target/release:$PATH"
 
+# The contact-form renderer is example 03's: this example puts auth in front of the
+# same form, so it runs that binary on a socket of its own.
+[ -x "$EXAMPLES/target/release/render-contact" ] || (cd "$EXAMPLES" && cargo build --release -p render-contact --quiet)
+
 # Development keys and state: a private per-user directory, see dev-home.sh.
 . "$SITE/../dev-home.sh"
 "$SITE/../dev-keys.sh"
@@ -46,7 +50,7 @@ AUTH_PID=$!
 # node's /genid ask it who the caller is.
 
 M6_SOCKET_OVERRIDE=/tmp/m6/render-contact-auth.sock \
-    "$EXAMPLES/target/release/render-contact-auth" "$SITE" "$SITE/configs/render-contact.conf" &
+    "$EXAMPLES/target/release/render-contact" "$SITE" "$SITE/configs/render-contact.conf" &
 RENDER_PID=$!
 
 trap 'kill $HTML_PID $FILE_PID $AUTH_PID $RENDER_PID $HTTP_PID 2>/dev/null; wait 2>/dev/null' EXIT
