@@ -11,5 +11,5 @@ name = "edge-e"
 # The cache node follows the origin's site generation (see configs/cache-edge-a.toml).
 [genid]
 upstream       = "origin"
-token_file     = "@M6_DEV_HOME@/09-global-deployment/genid-read.token"
+token_file     = "@M6_DEV_HOME@/09-global-deployment/genid-read-edge-e.token"
 heartbeat_secs = 2

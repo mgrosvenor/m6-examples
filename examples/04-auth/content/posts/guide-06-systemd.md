@@ -323,7 +323,17 @@ chown root:m6 /etc/m6/render-cms.conf
 chmod 640 /etc/m6/render-cms.conf
 ```
 
-Production leaves `ca_file` out, so the system's certificate store is trusted. Mint the token as the guide on publishing describes: `m6-auth-cli /etc/m6/m6-auth.conf user add publisher --role genid-write ...` and `token create publisher`, and write it to `/etc/m6/genid-write.token`.
+Production leaves `ca_file` out, so the system's certificate store is trusted.
+
+Mint the publisher token once the auth database exists, after the first start of `m6-auth`:
+
+```bash
+m6-auth-cli /etc/m6/m6-auth.conf user add publisher --role genid-write --password "$(openssl rand -hex 16)"
+m6-auth-cli /etc/m6/m6-auth.conf token create publisher --name publish --ttl-days 90 > /etc/m6/genid-write.token
+chmod 600 /etc/m6/genid-write.token
+```
+
+Without `--ttl-days` a token lasts 365 days. This one expires 90 days after it is minted. From then on `/genid` answers 401 to it, and the CMS can no longer publish. To rotate it before that, mint a new token the same way into a new file, move it over `/etc/m6/genid-write.token`, run `systemctl restart render-cms` (systemd copies the credential in when the unit starts), then revoke the old one: `m6-auth-cli /etc/m6/m6-auth.conf token ls publisher` lists the tokens with their ids, and `token revoke <id>` ends one. A cache node follows the site with a reader token of its own, one user per node (`reader-edge-a`, and so on, with the `genid-read` role), minted the same way and rotated the same way with `systemctl restart m6-http-cache`. See example 09's `setup-origin.sh`.
 
 ## Install and start
 
