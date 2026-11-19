@@ -18,7 +18,10 @@ ExecStart=/usr/local/bin/m6-http \
 
 LoadCredential=tls-cert.pem:/etc/letsencrypt/live/example.com/fullchain.pem
 LoadCredential=tls-key.pem:/etc/letsencrypt/live/example.com/privkey.pem
-LoadCredential=auth.pub:/etc/m6/auth.pub
+
+# The source node writes the site's generation ID here
+StateDirectory=m6-http
+StateDirectoryMode=0700
 
 Restart=on-failure
 RestartSec=2

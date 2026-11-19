@@ -112,7 +112,7 @@ One unit per process. Renderers follow the same pattern; only `ExecStart` and `D
 ```ini
 [Unit]
 Description=m6-html renderer
-Documentation=https://github.com/m6/m6
+Documentation=https://github.com/mgrosvenor/m6
 After=network.target
 
 [Service]
@@ -120,7 +120,6 @@ Type=simple
 User=m6
 Group=m6
 
-# Creates /run/m6/ with correct ownership and keeps it across restarts
 RuntimeDirectory=m6
 RuntimeDirectoryMode=0750
 RuntimeDirectoryPreserve=yes
@@ -136,7 +135,6 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=m6-html
 
-# Hardening
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
@@ -239,9 +237,10 @@ RuntimeDirectoryPreserve=yes
 
 ExecStart=/var/www/my-blog/bin/render-cms \
     /var/www/my-blog \
-    /var/www/my-blog/configs/render-cms.conf
+    /etc/m6/render-cms.conf
 
-# The token that lets render-cms publish with POST /genid
+# The token that lets render-cms publish with POST /genid. It arrives as
+# /run/credentials/render-cms.service/genid-write.token
 LoadCredential=genid-write.token:/etc/m6/genid-write.token
 
 Restart=on-failure
@@ -266,7 +265,7 @@ The `render-cms` binary lives in `/var/www/my-blog/bin/` — deployed alongside 
 ```ini
 [Unit]
 Description=m6-http reverse proxy and cache
-Documentation=https://github.com/m6/m6
+Documentation=https://github.com/mgrosvenor/m6
 After=network.target m6-html.service m6-file.service m6-auth.service render-cms.service
 
 [Service]
@@ -294,7 +293,6 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=m6-http
 
-# Bind to port 443
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 NoNewPrivileges=true
 ProtectSystem=strict
@@ -308,7 +306,24 @@ WantedBy=multi-user.target
 
 `After=` orders the start: m6-http expands each pool's socket glob once, at start, and a glob that matches no socket stops it with exit 2, so the backends must have bound their sockets first. m6-auth-server binds two sockets, `m6-auth.sock` for login and `check-m6-auth.sock` for the token check m6-http asks on every protected route and on `/genid`.
 
-The `render-cms` unit delivers the publisher token, and its `[genid]` table (in `render-cms.conf`, or in a `secrets_file`) names `/run/credentials/render-cms.service/genid-write.token`, the public URL and `connect = "127.0.0.1:443"`. Production leaves `ca_file` out, so the system's certificate store is trusted. Mint the token as the guide on publishing describes: `m6-auth-cli /etc/m6/m6-auth.conf user add publisher --role genid-write ...` and `token create publisher`.
+`StateDirectory=m6-http` gives m6-http `/var/lib/m6-http`, where the source node writes the site's generation ID, because `ProtectSystem=strict` makes the rest of the disk read-only.
+
+The `render-cms` unit delivers the publisher token with `LoadCredential`, as `/run/credentials/render-cms.service/genid-write.token`, and starts from `/etc/m6/render-cms.conf`. The site's `configs/render-cms.conf` is the development config: its `[genid]` table names the development token and CA. Build the production copy from it, keeping the routes and replacing only that table, which is the last one in the file:
+
+```bash
+sed '/^\[genid\]/,$d' /var/www/my-blog/configs/render-cms.conf > /etc/m6/render-cms.conf
+cat >> /etc/m6/render-cms.conf << 'CONF'
+[genid]
+url        = "https://example.com/genid"
+connect    = "127.0.0.1:443"
+token_file = "/run/credentials/render-cms.service/genid-write.token"
+timeout_ms = 10000
+CONF
+chown root:m6 /etc/m6/render-cms.conf
+chmod 640 /etc/m6/render-cms.conf
+```
+
+Production leaves `ca_file` out, so the system's certificate store is trusted. Mint the token as the guide on publishing describes: `m6-auth-cli /etc/m6/m6-auth.conf user add publisher --role genid-write ...` and `token create publisher`, and write it to `/etc/m6/genid-write.token`.
 
 ## Install and start
 
