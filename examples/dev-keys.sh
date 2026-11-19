@@ -22,10 +22,10 @@ if ! cert_usable; then
     new_cert=1
     rm -f "$DEV/dev.pem" "$DEV/dev-key.pem"
     if command -v mkcert &>/dev/null; then
-        mkcert -install 2>/dev/null || true
         mkcert -key-file "$DEV/dev-key.pem" \
                -cert-file "$DEV/dev.pem" \
                localhost 127.0.0.1
+        echo "For a browser that trusts this certificate, run once: mkcert -install"
     elif command -v openssl &>/dev/null; then
         # No mkcert: a self-signed certificate. A browser warns about it; curl -k
         # and the tests do not care. It must not be a CA: rustls rejects a CA
