@@ -1,17 +1,13 @@
 #!/bin/bash
 # dev-keys.sh — the development certificate and auth key pair every example's
-# configs name, kept in /tmp/m6/dev outside every site directory. m6 reads no
-# secret from a site tree, and every key path in a config is absolute. Writes
-# only what is missing.
+# configs name, kept in the private per-user directory dev-home.sh sets up, outside
+# every site directory. m6 reads no secret from a site tree, and every key path
+# in a config is absolute. Writes only what is missing.
 set -euo pipefail
 
-DEV=/tmp/m6/dev
-mkdir -p "$DEV"
-if [ ! -O "$DEV" ]; then
-    echo "ERROR: $DEV is not owned by this user. Refusing to write keys there." >&2
-    exit 1
-fi
-chmod 700 "$DEV"
+. "$(dirname "$0")/dev-home.sh"
+DEV="$M6_DEV_HOME/dev"
+m6_private_dir "$DEV"
 umask 077
 
 # Development TLS certificate for localhost.

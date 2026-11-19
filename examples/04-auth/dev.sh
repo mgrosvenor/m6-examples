@@ -7,15 +7,16 @@ M6="${M6:-$(cd "$SITE/../../../m6" && pwd)}"
 EXAMPLES="${EXAMPLES:-$(cd "$SITE/../.." && pwd)}"
 export PATH="$M6/target/release:$PATH"
 
-# Development keys, written by examples/dev-keys.sh into /tmp/m6/dev.
+# Development keys and state: a private per-user directory, see dev-home.sh.
+. "$SITE/../dev-home.sh"
 "$SITE/../dev-keys.sh"
 
 # ── Auth database ─────────────────────────────────────────────────────────────
-if [ ! -f /tmp/m6/04-auth/auth.db ]; then
+if [ ! -f $M6_DEV_HOME/04-auth/auth.db ]; then
     echo "Creating admin user (password: admin)..."
-    m6-auth-cli "$SITE/configs/m6-auth.conf" user add admin --password admin
-    m6-auth-cli "$SITE/configs/m6-auth.conf" group add members
-    m6-auth-cli "$SITE/configs/m6-auth.conf" group member add members admin
+    m6-auth-cli "$(m6_conf "$SITE/configs/m6-auth.conf")" user add admin --password admin
+    m6-auth-cli "$(m6_conf "$SITE/configs/m6-auth.conf")" group add members
+    m6-auth-cli "$(m6_conf "$SITE/configs/m6-auth.conf")" group member add members admin
 fi
 
 # ── Generate posts.json from markdown ─────────────────────────────────────────
@@ -37,7 +38,7 @@ M6_SOCKET_OVERRIDE=/tmp/m6/m6-file.sock \
 FILE_PID=$!
 
 M6_SOCKET_OVERRIDE=/tmp/m6/m6-auth.sock \
-    m6-auth-server "$SITE" "$SITE/configs/m6-auth.conf" &
+    m6-auth-server "$SITE" "$(m6_conf "$SITE/configs/m6-auth.conf")" &
 AUTH_PID=$!
 
 # m6-auth-server also binds the check socket beside this one (check-<name>),
@@ -60,7 +61,7 @@ for i in $(seq 1 30); do
     sleep 0.2
 done
 
-m6-http "$SITE" "$SITE/configs/system-dev.toml" &
+m6-http "$SITE" "$(m6_conf "$SITE/configs/system-dev.toml")" &
 HTTP_PID=$!
 
 echo "Running at https://localhost:8443"

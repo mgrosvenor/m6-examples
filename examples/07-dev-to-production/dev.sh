@@ -7,20 +7,21 @@ M6="${M6:-$(cd "$SITE/../../../m6" && pwd)}"
 EXAMPLES="${EXAMPLES:-$(cd "$SITE/../.." && pwd)}"
 export PATH="$M6/target/release:$PATH"
 
-# Development keys, written by examples/dev-keys.sh into /tmp/m6/dev.
+# Development keys and state: a private per-user directory, see dev-home.sh.
+. "$SITE/../dev-home.sh"
 "$SITE/../dev-keys.sh"
 
 # ── Auth database ─────────────────────────────────────────────────────────────
-if [ ! -f /tmp/m6/07-dev-to-production/auth.db ]; then
+if [ ! -f $M6_DEV_HOME/07-dev-to-production/auth.db ]; then
     echo "Creating admin user (password: admin)..."
-    m6-auth-cli "$SITE/configs/m6-auth.conf" user add admin --password admin
-    m6-auth-cli "$SITE/configs/m6-auth.conf" group add editors
-    m6-auth-cli "$SITE/configs/m6-auth.conf" group member add editors admin
+    m6-auth-cli "$(m6_conf "$SITE/configs/m6-auth.conf")" user add admin --password admin
+    m6-auth-cli "$(m6_conf "$SITE/configs/m6-auth.conf")" group add editors
+    m6-auth-cli "$(m6_conf "$SITE/configs/m6-auth.conf")" group member add editors admin
 fi
 
 # ── Publisher token ───────────────────────────────────────────────────────────
 # The renderer sends POST /genid with it (see [genid] in its config).
-"$SITE/../dev-token.sh" "$SITE/configs/m6-auth.conf" publisher genid-write /tmp/m6/07-dev-to-production/genid-write.token
+"$SITE/../dev-token.sh" "$(m6_conf "$SITE/configs/m6-auth.conf")" publisher genid-write $M6_DEV_HOME/07-dev-to-production/genid-write.token
 
 # ── Generate posts.json from markdown ─────────────────────────────────────────
 m6-md "$SITE/content/posts/" --output "$SITE/data/posts.json"
@@ -41,7 +42,7 @@ M6_SOCKET_OVERRIDE=/tmp/m6/m6-file.sock \
 FILE_PID=$!
 
 M6_SOCKET_OVERRIDE=/tmp/m6/m6-auth.sock \
-    m6-auth-server "$SITE" "$SITE/configs/m6-auth.conf" &
+    m6-auth-server "$SITE" "$(m6_conf "$SITE/configs/m6-auth.conf")" &
 AUTH_PID=$!
 
 # m6-auth-server also binds the check socket beside this one (check-<name>),
@@ -49,7 +50,7 @@ AUTH_PID=$!
 # node's /genid ask it who the caller is.
 
 M6_SOCKET_OVERRIDE=/tmp/m6/render-cms-prod.sock \
-    "$EXAMPLES/target/release/render-cms-prod" "$SITE" "$SITE/configs/render-cms.conf" &
+    "$EXAMPLES/target/release/render-cms-prod" "$SITE" "$(m6_conf "$SITE/configs/render-cms.conf")" &
 RENDER_PID=$!
 
 trap 'kill $HTML_PID $FILE_PID $AUTH_PID $RENDER_PID $HTTP_PID 2>/dev/null; wait 2>/dev/null' EXIT
@@ -64,9 +65,9 @@ for i in $(seq 1 30); do
     sleep 0.2
 done
 
-mkdir -p /tmp/m6/07-dev-to-production/state
-STATE_DIRECTORY=/tmp/m6/07-dev-to-production/state \
-    m6-http "$SITE" "$SITE/configs/system-dev.toml" &
+mkdir -p $M6_DEV_HOME/07-dev-to-production/state
+STATE_DIRECTORY=$M6_DEV_HOME/07-dev-to-production/state \
+    m6-http "$SITE" "$(m6_conf "$SITE/configs/system-dev.toml")" &
 HTTP_PID=$!
 
 echo ""

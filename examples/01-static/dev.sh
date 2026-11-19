@@ -6,7 +6,8 @@ SITE="$(cd "$(dirname "$0")" && pwd)"
 M6="${M6:-$(cd "$SITE/../../.." && pwd)/m6}"
 export PATH="$M6/target/release:$PATH"
 
-# Development keys, written by examples/dev-keys.sh into /tmp/m6/dev.
+# Development keys and state: a private per-user directory, see dev-home.sh.
+. "$SITE/../dev-home.sh"
 "$SITE/../dev-keys.sh"
 
 # ── Clean up stale state ──────────────────────────────────────────────────────
@@ -32,7 +33,7 @@ for i in $(seq 1 20); do
     sleep 0.2
 done
 
-m6-http "$SITE" "$SITE/configs/system-dev.toml" &
+m6-http "$SITE" "$(m6_conf "$SITE/configs/system-dev.toml")" &
 HTTP_PID=$!
 
 echo "Running at https://localhost:8443"

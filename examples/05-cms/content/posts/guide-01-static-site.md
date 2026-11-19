@@ -103,14 +103,14 @@ The `[[route_group]]` glob expands at startup: every file under `assets/` become
 ```toml
 [server]
 bind     = "127.0.0.1:8443"
-tls_cert = "/tmp/m6/dev/dev.pem"
-tls_key  = "/tmp/m6/dev/dev-key.pem"
+tls_cert = "@M6_DEV_HOME@/dev/dev.pem"
+tls_key  = "@M6_DEV_HOME@/dev/dev-key.pem"
 
 [node]
 name = "dev"
 ```
 
-The system config holds the state of the machine that runs m6-http: the node name, the address to listen on and the TLS certificate. It is the second argument to m6-http (see `dev.sh` below). The paths are absolute, and `dev.sh` runs `examples/dev-keys.sh`, which writes them to `/tmp/m6/dev` on first run. A production machine has its own system config with its own node name, bind address and certificate paths, and `site.toml` stays the same.
+The system config holds the state of the machine that runs m6-http: the node name, the address to listen on and the TLS certificate. It is the second argument to m6-http (see `dev.sh` below). The paths are absolute, and `dev.sh` runs `examples/dev-keys.sh`, which writes them to `dev/` in a private per-user directory on first run. The config spells that directory `@M6_DEV_HOME@`, and `dev.sh` writes a copy with the real path and gives m6-http the copy. A production machine has its own system config with its own node name, bind address and certificate paths, and `site.toml` stays the same.
 
 ## `configs/m6-html.conf`
 
@@ -211,7 +211,8 @@ SITE="$(cd "$(dirname "$0")" && pwd)"
 M6="${M6:-$(cd "$SITE/../../.." && pwd)/m6}"
 export PATH="$M6/target/release:$PATH"
 
-# Development keys, written by examples/dev-keys.sh into /tmp/m6/dev.
+# Development keys and state: a private per-user directory, see dev-home.sh.
+. "$SITE/../dev-home.sh"
 "$SITE/../dev-keys.sh"
 
 # ── Clean up stale state ──────────────────────────────────────────────────────
@@ -237,14 +238,14 @@ for i in $(seq 1 20); do
     sleep 0.2
 done
 
-m6-http "$SITE" "$SITE/configs/system-dev.toml" &
+m6-http "$SITE" "$(m6_conf "$SITE/configs/system-dev.toml")" &
 HTTP_PID=$!
 
 echo "Running at https://localhost:8443"
 wait
 ```
 
-The first line runs `examples/dev-keys.sh`, which writes the certificate named in `configs/system-dev.toml` to `/tmp/m6/dev` if it does not exist yet. It uses `mkcert` when installed and falls back to a self-signed `openssl` certificate. The script then starts three background processes. `trap` kills them all on `Ctrl-C`. `set -e` aborts if any step fails.
+The first lines load `examples/dev-home.sh`, which creates the private per-user directory (`m6_conf` writes a config copy with the real path into it), and run `examples/dev-keys.sh`, which writes the certificate named in `configs/system-dev.toml` into that directory if it does not exist yet. It uses `mkcert` when installed and falls back to a self-signed `openssl` certificate. The script then starts three background processes. `trap` kills them all on `Ctrl-C`. `set -e` aborts if any step fails.
 
 ## Seeing a change
 

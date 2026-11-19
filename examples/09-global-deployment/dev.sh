@@ -21,27 +21,28 @@ M6="${M6:-$(cd "$SITE09/../../../m6" && pwd)}"
 EXAMPLES="${EXAMPLES:-$(cd "$SITE09/../.." && pwd)}"
 export PATH="$M6/target/release:$PATH"
 
+# Development keys and state: a private per-user directory, see dev-home.sh.
+. "$SITE09/../dev-home.sh"
+"$SITE09/../dev-keys.sh"
+
 # ── Require 07 to have been set up first ─────────────────────────────────────
-if [ ! -f /tmp/m6/07-dev-to-production/auth.db ]; then
-    echo "ERROR: /tmp/m6/07-dev-to-production/auth.db not found."
+if [ ! -f $M6_DEV_HOME/07-dev-to-production/auth.db ]; then
+    echo "ERROR: $M6_DEV_HOME/07-dev-to-production/auth.db not found."
     echo "Run examples/07-dev-to-production/dev.sh first to set up the auth database." >&2
     exit 1
 fi
 
-# Development keys, written by examples/dev-keys.sh into /tmp/m6/dev.
-"$SITE09/../dev-keys.sh"
-
 # The origin's generation: the CMS publishes with a genid-write token, and each cache
 # node follows the origin with a genid-read token.
-STATE=/tmp/m6/09-global-deployment
+STATE=$M6_DEV_HOME/09-global-deployment
 mkdir -p "$STATE/state"
-"$SITE09/../dev-token.sh" "$SITE07/configs/m6-auth.conf" publisher genid-write "$STATE/genid-write.token"
-"$SITE09/../dev-token.sh" "$SITE07/configs/m6-auth.conf" reader genid-read "$STATE/genid-read.token"
+"$SITE09/../dev-token.sh" "$(m6_conf "$SITE07/configs/m6-auth.conf")" publisher genid-write "$STATE/genid-write.token"
+"$SITE09/../dev-token.sh" "$(m6_conf "$SITE07/configs/m6-auth.conf")" reader genid-read "$STATE/genid-read.token"
 # 07's renderer config publishes to port 8443. Here the origin's TLS port is 9001.
 sed -e 's#https://localhost:8443/genid#https://localhost:9001/genid#' \
     -e 's#127.0.0.1:8443#127.0.0.1:9001#' \
-    -e "s#/tmp/m6/07-dev-to-production/genid-write.token#$STATE/genid-write.token#" \
-    "$SITE07/configs/render-cms.conf" > "$STATE/render-cms.conf"
+    -e "s#$M6_DEV_HOME/07-dev-to-production/genid-write.token#$STATE/genid-write.token#" \
+    "$(m6_conf "$SITE07/configs/render-cms.conf")" > "$STATE/render-cms.conf"
 
 # ── Generate posts.json ────────────────────────────────────────────────────────
 m6-md "$SITE07/content/posts/" --output "$SITE07/data/posts.json"
@@ -65,7 +66,7 @@ M6_SOCKET_OVERRIDE=/tmp/m6/m6-file.sock \
 FILE_PID=$!
 
 M6_SOCKET_OVERRIDE=/tmp/m6/m6-auth.sock \
-    m6-auth-server "$SITE07" "$SITE07/configs/m6-auth.conf" &
+    m6-auth-server "$SITE07" "$(m6_conf "$SITE07/configs/m6-auth.conf")" &
 AUTH_PID=$!
 
 M6_SOCKET_OVERRIDE=/tmp/m6/render-cms.sock \
@@ -88,24 +89,24 @@ done
 # ── Origin — TLS (port 9001) + H2C backbone (port 9000) ──────────────────────
 # Single m6-http instance: bind = TLS for users, h2c_bind = cleartext for cache nodes
 STATE_DIRECTORY="$STATE/state" \
-    m6-http "$SITE09/site-origin" "$SITE09/configs/local/origin.toml" &
+    m6-http "$SITE09/site-origin" "$(m6_conf "$SITE09/configs/local/origin.toml")" &
 ORIGIN_PID=$!
 ALL_PIDS="$ALL_PIDS $ORIGIN_PID"
 
 # ── Cache nodes (ports 9002–9006, all proxy to origin H2C on 9000) ────────────
-m6-http "$SITE09/site-cache" "$SITE09/configs/local/cache-edge-a.toml" &
+m6-http "$SITE09/site-cache" "$(m6_conf "$SITE09/configs/local/cache-edge-a.toml")" &
 ALL_PIDS="$ALL_PIDS $!"
 
-m6-http "$SITE09/site-cache" "$SITE09/configs/local/cache-edge-b.toml" &
+m6-http "$SITE09/site-cache" "$(m6_conf "$SITE09/configs/local/cache-edge-b.toml")" &
 ALL_PIDS="$ALL_PIDS $!"
 
-m6-http "$SITE09/site-cache" "$SITE09/configs/local/cache-edge-c.toml" &
+m6-http "$SITE09/site-cache" "$(m6_conf "$SITE09/configs/local/cache-edge-c.toml")" &
 ALL_PIDS="$ALL_PIDS $!"
 
-m6-http "$SITE09/site-cache" "$SITE09/configs/local/cache-edge-d.toml" &
+m6-http "$SITE09/site-cache" "$(m6_conf "$SITE09/configs/local/cache-edge-d.toml")" &
 ALL_PIDS="$ALL_PIDS $!"
 
-m6-http "$SITE09/site-cache" "$SITE09/configs/local/cache-edge-e.toml" &
+m6-http "$SITE09/site-cache" "$(m6_conf "$SITE09/configs/local/cache-edge-e.toml")" &
 ALL_PIDS="$ALL_PIDS $!"
 
 trap "kill $ALL_PIDS 2>/dev/null; wait 2>/dev/null" EXIT

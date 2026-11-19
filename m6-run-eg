@@ -195,7 +195,7 @@ start_eg() {
     # Run setup.sh if present and not yet completed (detected by absence of keys/ or data/).
     if [ -f "$dir/setup.sh" ]; then
         local needs_setup=0
-        [ ! -f /tmp/m6/dev/auth.pem ] && needs_setup=1
+        ( . "$EXAMPLES_DIR/dev-home.sh" && [ -f "$M6_DEV_HOME/dev/auth.pem" ] ) || needs_setup=1
         [ ! -d "$dir/data" ] && needs_setup=1
         if [ "$needs_setup" -eq 1 ]; then
             echo "running setup.sh for example $num..."

@@ -8,18 +8,19 @@ EXAMPLES="$(cd "$SITE/../.." && pwd)"
 M6="${M6:-$(cd "$SITE/../../../m6" && pwd)}"
 export PATH="$M6/target/release:$EXAMPLES/target/release:$PATH"
 
-# Development keys, written by examples/dev-keys.sh into /tmp/m6/dev.
+# Development keys and state: a private per-user directory, see dev-home.sh.
+. "$SITE/../dev-home.sh"
 "$SITE/../dev-keys.sh"
 
 # ── Setup check ───────────────────────────────────────────────────────────────
-if [ ! -f /tmp/m6/11-admin-dashboard/auth.db ]; then
+if [ ! -f $M6_DEV_HOME/11-admin-dashboard/auth.db ]; then
     echo "First-time setup required. Running setup.sh..."
     "$SITE/setup.sh"
 fi
 
 # ── Publisher token ───────────────────────────────────────────────────────────
 # The renderer sends POST /genid with it (see [genid] in its config).
-"$SITE/../dev-token.sh" "$SITE/configs/m6-auth.conf" publisher genid-write /tmp/m6/11-admin-dashboard/genid-write.token
+"$SITE/../dev-token.sh" "$(m6_conf "$SITE/configs/m6-auth.conf")" publisher genid-write $M6_DEV_HOME/11-admin-dashboard/genid-write.token
 
 # ── Clean up stale state ──────────────────────────────────────────────────────
 mkdir -p /tmp/m6
@@ -33,7 +34,7 @@ echo "=== 11-admin-dashboard ==="
 
 # ── m6-auth ───────────────────────────────────────────────────────────────────
 M6_SOCKET_OVERRIDE=/tmp/m6/m6-auth-admin.sock \
-    m6-auth-server "$SITE" "$SITE/configs/m6-auth.conf" &
+    m6-auth-server "$SITE" "$(m6_conf "$SITE/configs/m6-auth.conf")" &
 AUTH_PID=$!
 
 # m6-auth-server also binds the check socket beside this one (check-<name>),
@@ -42,7 +43,7 @@ AUTH_PID=$!
 
 # ── render-admin ──────────────────────────────────────────────────────────────
 M6_SOCKET_OVERRIDE=/tmp/m6/render-admin.sock \
-    render-admin "$SITE" "$SITE/configs/render-admin.conf" &
+    render-admin "$SITE" "$(m6_conf "$SITE/configs/render-admin.conf")" &
 ADMIN_PID=$!
 
 # ── m6-file (static dashboard) ────────────────────────────────────────────────
@@ -64,10 +65,10 @@ done
 
 # ── m6-http ───────────────────────────────────────────────────────────────────
 # Truncate the log file so render-admin always reads current-session data.
-: > /tmp/m6/m6-http-admin.log
-mkdir -p /tmp/m6/11-admin-dashboard/state
-STATE_DIRECTORY=/tmp/m6/11-admin-dashboard/state \
-    m6-http "$SITE" "$SITE/configs/system-dev.toml" >> /tmp/m6/m6-http-admin.log 2>&1 &
+mkdir -p $M6_DEV_HOME/11-admin-dashboard/state
+: > $M6_DEV_HOME/11-admin-dashboard/m6-http-admin.log
+STATE_DIRECTORY=$M6_DEV_HOME/11-admin-dashboard/state \
+    m6-http "$SITE" "$(m6_conf "$SITE/configs/system-dev.toml")" >> $M6_DEV_HOME/11-admin-dashboard/m6-http-admin.log 2>&1 &
 HTTP_PID=$!
 
 echo ""

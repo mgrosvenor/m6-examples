@@ -12,7 +12,8 @@ echo "=== 11-admin-dashboard setup ==="
 echo "Building render-admin..."
 cargo build --release -p render-admin
 
-# Development keys, written by examples/dev-keys.sh into /tmp/m6/dev.
+# Development keys and state: a private per-user directory, see dev-home.sh.
+. "$SITE/../dev-home.sh"
 "$SITE/../dev-keys.sh"
 
 # ── Dirs ──────────────────────────────────────────────────────────────────────
@@ -20,9 +21,9 @@ mkdir -p "$SITE/data" "$SITE/logs"
 mkdir -p /tmp/m6
 
 # ── User database ─────────────────────────────────────────────────────────────
-if [ ! -f /tmp/m6/11-admin-dashboard/auth.db ]; then
+if [ ! -f $M6_DEV_HOME/11-admin-dashboard/auth.db ]; then
     echo "Creating admin user..."
-    m6-auth-cli "$SITE/configs/m6-auth.conf" user add admin --role admin --password admin
+    m6-auth-cli "$(m6_conf "$SITE/configs/m6-auth.conf")" user add admin --role admin --password admin
 fi
 
 echo ""

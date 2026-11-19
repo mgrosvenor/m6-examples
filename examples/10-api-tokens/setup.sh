@@ -3,11 +3,12 @@
 set -e
 SITE="$(cd "$(dirname "$0")" && pwd)"
 
-# Development keys, written by examples/dev-keys.sh into /tmp/m6/dev.
+# Development keys and state: a private per-user directory, see dev-home.sh.
+. "$SITE/../dev-home.sh"
 "$SITE/../dev-keys.sh"
 
 # Create the 'api' user with the 'api' and 'user' roles
-m6-auth-cli "$SITE/configs/m6-auth.conf" user add api --role api --role user --password secret
+m6-auth-cli "$(m6_conf "$SITE/configs/m6-auth.conf")" user add api --role api --role user --password secret
 echo "User 'api' created (password: secret)."
 
 echo ""

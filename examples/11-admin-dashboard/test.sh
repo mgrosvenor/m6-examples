@@ -8,7 +8,8 @@ M6="$(cd "$SITE/../../../m6" && pwd)"
 export PATH="$M6/target/release:$PATH"
 
 BASE="https://localhost:8444"
-CONF="$SITE/configs/m6-auth.conf"
+. "$SITE/../dev-home.sh"
+CONF="$(m6_conf "$SITE/configs/m6-auth.conf")"
 PASS=0
 FAIL=0
 

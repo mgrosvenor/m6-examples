@@ -130,7 +130,7 @@ jobs:
       # example with neither a config nor a reason recorded here fails the job,
       # rather than being quietly stepped over.
       # A fresh checkout has no development keys: examples/dev-keys.sh writes
-      # them to /tmp/m6/dev. The config parse below validates that tls_cert
+      # them to the private per-user directory dev-home.sh sets up. The config parse below validates that tls_cert
       # exists, so without this EVERY example is rejected for a missing file and
       # the job fails saying "9 config(s) rejected by m6-http" while nothing is
       # wrong with any of them.
@@ -195,7 +195,10 @@ jobs:
               echo "  $name  NO CONFIG and no reason recorded for that"
               unexplained=$((unexplained + 1)); continue
             fi
-            if out=$(m6-http "$(cd "$d" && pwd)" "$(cd "$(dirname "$sys")" && pwd)/$(basename "$sys")" --dump-config 2>&1 >/dev/null) && [ -z "$out" ]; then
+            # The checked-in config names the key directory as @M6_DEV_HOME@;
+            # m6 reads the copy with the real path filled in.
+            sys=$(. examples/dev-home.sh && m6_conf "$sys")
+            if out=$(m6-http "$(cd "$d" && pwd)" "$sys" --dump-config 2>&1 >/dev/null) && [ -z "$out" ]; then
               echo "  $name  ok"
             else
               echo "  $name  $(echo "$out" | head -1)"

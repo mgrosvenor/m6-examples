@@ -14,8 +14,8 @@
 //! and makes there its own self-signed certificate, its own auth key pair and
 //! auth database (with an `admin` user in the `editors` group and a publisher
 //! token), and a system config with a `[genid]` table. It starts every
-//! service against that copy, so it neither reads nor changes `/tmp/m6` or the
-//! checked-in site. If a binary is absent the test fails and names the command
+//! service against that copy, so it neither reads nor changes the development
+//! directory (`M6_DEV_HOME`) or the checked-in site. If a binary is absent the test fails and names the command
 //! that fixes it.
 
 use std::collections::HashMap;
@@ -535,11 +535,11 @@ impl ServerStack {
             "configs/m6-auth.conf",
             &[
                 (
-                    "/tmp/m6/05-cms/auth.db",
+                    "@M6_DEV_HOME@/05-cms/auth.db",
                     w.join("auth.db").display().to_string(),
                 ),
-                ("/tmp/m6/dev/auth.pem", auth_pem.display().to_string()),
-                ("/tmp/m6/dev/auth.pub", auth_pub.display().to_string()),
+                ("@M6_DEV_HOME@/dev/auth.pem", auth_pem.display().to_string()),
+                ("@M6_DEV_HOME@/dev/auth.pub", auth_pub.display().to_string()),
             ],
         );
         let token_file = w.join("genid-write.token");
@@ -552,10 +552,10 @@ impl ServerStack {
                 ),
                 ("127.0.0.1:8443", tls_addr.clone()),
                 (
-                    "/tmp/m6/05-cms/genid-write.token",
+                    "@M6_DEV_HOME@/05-cms/genid-write.token",
                     token_file.display().to_string(),
                 ),
-                ("/tmp/m6/dev/ca.pem", tls_cert.display().to_string()),
+                ("@M6_DEV_HOME@/dev/ca.pem", tls_cert.display().to_string()),
             ],
         );
 

@@ -34,11 +34,12 @@ cd examples/04-auth
 set -e
 SITE="$(cd "$(dirname "$0")" && pwd)"
 
-# Development keys, written by examples/dev-keys.sh into /tmp/m6/dev.
+# Development keys and state: a private per-user directory, see dev-home.sh.
+. "$SITE/../dev-home.sh"
 "$SITE/../dev-keys.sh"
 
 # Create first admin user — database created automatically if absent
-m6-auth-cli "$SITE/configs/m6-auth.conf" user add admin --role admin
+m6-auth-cli "$(m6_conf "$SITE/configs/m6-auth.conf")" user add admin --role admin
 
 echo "Setup complete. Start the server with ./dev.sh"
 ```
@@ -49,7 +50,7 @@ Run `setup.sh` once per environment. The private key stays on the server and sig
 
 ```toml
 [storage]
-path = "/tmp/m6/04-auth/auth.db"
+path = "@M6_DEV_HOME@/04-auth/auth.db"
 
 [tokens]
 access_ttl  = 900       # 15 minutes
@@ -57,8 +58,8 @@ refresh_ttl = 2592000   # 30 days
 issuer      = "localhost"
 
 [keys]
-private_key = "/tmp/m6/dev/auth.pem"
-public_key  = "/tmp/m6/dev/auth.pub"
+private_key = "@M6_DEV_HOME@/dev/auth.pem"
+public_key  = "@M6_DEV_HOME@/dev/auth.pub"
 ```
 
 m6-auth manages its own SQLite database at `storage.path`. The access token is short-lived (15 min); the refresh token is long-lived (30 days).

@@ -25,8 +25,11 @@ mkcert -install
 ```
 
 Each example's `dev.sh` runs `examples/dev-keys.sh`, which writes the development
-certificate and auth keys to `/tmp/m6/dev` on first run, so there is nothing to
-place or symlink by hand.
+certificate and auth keys to `dev/` in a private per-user directory on first run,
+so there is nothing to place or symlink by hand. The directory is
+`${XDG_RUNTIME_DIR:-${TMPDIR:-$HOME/.cache}}/m6`, created with mode 700; set
+`M6_DEV_HOME` to use another. Each example's configs name it as `@M6_DEV_HOME@`,
+and its `dev.sh` writes a copy with the real path for m6 to read.
 
 ### Check the install
 

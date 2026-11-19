@@ -24,7 +24,8 @@ info "Building m6 binaries..."
 (cd "$M6" && cargo build --release --quiet)
 export PATH="$M6/target/release:$PATH"
 
-# Development keys, written by examples/dev-keys.sh into /tmp/m6/dev.
+# Development keys and state: a private per-user directory, see dev-home.sh.
+. "$SITE/../dev-home.sh"
 "$SITE/../dev-keys.sh"
 
 # ── Start stack (if not already listening) ────────────────────────────────────
@@ -49,7 +50,7 @@ if ! nc -z localhost 8443 2>/dev/null; then
         echo -n "."; sleep 0.25
     done
 
-    m6-http "$SITE" "$SITE/configs/system-dev.toml" >> "$SITE/logs/m6-http.log" 2>&1 &
+    m6-http "$SITE" "$(m6_conf "$SITE/configs/system-dev.toml")" >> "$SITE/logs/m6-http.log" 2>&1 &
 
     # Wait for readiness using HTTP/1.1
     CURL="$(command -v /opt/homebrew/opt/curl/bin/curl 2>/dev/null || echo curl)"

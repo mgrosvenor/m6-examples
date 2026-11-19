@@ -55,7 +55,7 @@ mkcert -install
 mkcert localhost 127.0.0.1
 ```
 
-You do not need to run `mkcert localhost` yourself. Each example's `dev.sh` runs `examples/dev-keys.sh`, which writes the development certificate and auth keys to `/tmp/m6/dev` on first run, and the example's `configs/system-dev.toml` points at them. The `mkcert -install` step above is the only one you do by hand. If `mkcert` is missing, `dev-keys.sh` falls back to a self-signed certificate from `openssl` and your browser will warn about it.
+You do not need to run `mkcert localhost` yourself. Each example's `dev.sh` runs `examples/dev-keys.sh`, which writes the development certificate and auth keys to `dev/` in `${XDG_RUNTIME_DIR:-${TMPDIR:-$HOME/.cache}}/m6`, a directory only you can use (mode 700; `M6_DEV_HOME` overrides the location) on first run. The example's `configs/system-dev.toml` names that directory as `@M6_DEV_HOME@`, because m6 reads absolute paths and expands no variables, and `dev.sh` writes a copy with the real path for m6-http to read. The `mkcert -install` step above is the only one you do by hand. If `mkcert` is missing, `dev-keys.sh` falls back to a self-signed certificate from `openssl` and your browser will warn about it.
 
 ## Clone the examples
 
@@ -64,7 +64,7 @@ git clone https://github.com/m6/m6-examples
 cd m6-examples
 ```
 
-Now you have all five examples ready to run. Each is self-contained: its own `site.toml`, its own configs, its own templates and data. Each reads its TLS certificate from `/tmp/m6/dev`, written by `examples/dev-keys.sh`.
+Now you have all five examples ready to run. Each is self-contained: its own `site.toml`, its own configs, its own templates and data. Each reads its TLS certificate from `dev/` in that same private directory, written by `examples/dev-keys.sh`.
 
 ## How the examples are structured
 

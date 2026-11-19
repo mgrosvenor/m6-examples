@@ -493,11 +493,11 @@ impl GlobalStack {
             "configs/m6-auth.conf",
             &[
                 (
-                    "/tmp/m6/07-dev-to-production/auth.db",
+                    "@M6_DEV_HOME@/07-dev-to-production/auth.db",
                     w.join("auth.db").display().to_string(),
                 ),
-                ("/tmp/m6/dev/auth.pem", auth_pem.display().to_string()),
-                ("/tmp/m6/dev/auth.pub", auth_pub.display().to_string()),
+                ("@M6_DEV_HOME@/dev/auth.pem", auth_pem.display().to_string()),
+                ("@M6_DEV_HOME@/dev/auth.pub", auth_pub.display().to_string()),
             ],
         );
         rewrite(
@@ -509,10 +509,10 @@ impl GlobalStack {
                 ),
                 ("127.0.0.1:8443", origin_tls_addr.clone()),
                 (
-                    "/tmp/m6/07-dev-to-production/genid-write.token",
+                    "@M6_DEV_HOME@/07-dev-to-production/genid-write.token",
                     write_token.display().to_string(),
                 ),
-                ("/tmp/m6/dev/ca.pem", cert_path.display().to_string()),
+                ("@M6_DEV_HOME@/dev/ca.pem", cert_path.display().to_string()),
             ],
         );
         // The auth database: an editor to log in with, a publisher for the CMS and a

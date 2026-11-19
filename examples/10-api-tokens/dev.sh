@@ -6,14 +6,15 @@ SITE="$(cd "$(dirname "$0")" && pwd)"
 M6="${M6:-$(cd "$SITE/../../../m6" && pwd)}"
 export PATH="$M6/target/release:$PATH"
 
-# Development keys, written by examples/dev-keys.sh into /tmp/m6/dev.
+# Development keys and state: a private per-user directory, see dev-home.sh.
+. "$SITE/../dev-home.sh"
 "$SITE/../dev-keys.sh"
 
 # ── Auth database ─────────────────────────────────────────────────────────────
 # Always recreate to start with clean state (removes any API tokens from prior runs).
-rm -f /tmp/m6/10-api-tokens/auth.db
+rm -f $M6_DEV_HOME/10-api-tokens/auth.db
 echo "Creating 'api' user (password: secret)..."
-m6-auth-cli "$SITE/configs/m6-auth.conf" user add api --role api --role user --password secret
+m6-auth-cli "$(m6_conf "$SITE/configs/m6-auth.conf")" user add api --role api --role user --password secret
 
 # ── Clean up stale state ──────────────────────────────────────────────────────
 mkdir -p /tmp/m6
@@ -31,7 +32,7 @@ M6_SOCKET_OVERRIDE=/tmp/m6/m6-file-api.sock \
 FILE_PID=$!
 
 M6_SOCKET_OVERRIDE=/tmp/m6/m6-auth-api.sock \
-    m6-auth-server "$SITE" "$SITE/configs/m6-auth.conf" &
+    m6-auth-server "$SITE" "$(m6_conf "$SITE/configs/m6-auth.conf")" &
 AUTH_PID=$!
 
 # m6-auth-server also binds the check socket beside this one (check-<name>),
@@ -48,7 +49,7 @@ for i in $(seq 1 30); do
     sleep 0.2
 done
 
-m6-http "$SITE" "$SITE/configs/system-dev.toml" &
+m6-http "$SITE" "$(m6_conf "$SITE/configs/system-dev.toml")" &
 HTTP_PID=$!
 
 echo "Running at https://localhost:8443"

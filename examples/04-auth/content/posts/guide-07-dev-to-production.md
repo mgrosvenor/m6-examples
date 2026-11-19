@@ -49,11 +49,13 @@ sockets = "/run/m6/m6-html-*.sock"
 
 ```toml
 # The node state in development.
-# Committed to the repo — contains no secrets.
+# Committed to the repo — contains no secrets. @M6_DEV_HOME@ stands for the
+# per-user directory the dev scripts create (dev-home.sh); dev.sh copies this
+# file with the real path filled in.
 [server]
 bind     = "127.0.0.1:8443"
-tls_cert = "/tmp/m6/dev/dev.pem"
-tls_key  = "/tmp/m6/dev/dev-key.pem"
+tls_cert = "@M6_DEV_HOME@/dev/dev.pem"
+tls_key  = "@M6_DEV_HOME@/dev/dev-key.pem"
 
 [auth]
 backend = "m6-auth-check"
@@ -236,13 +238,13 @@ For template, data and content changes: `./deploy.sh`, then one `POST /genid` (t
 
 | | Development | Production |
 |---|---|---|
-| `m6-http` invocation | `m6-http $SITE $SITE/configs/system-dev.toml` | `m6-http /var/www/my-blog /etc/m6/my-blog.toml` |
+| `m6-http` invocation | `m6-http $SITE "$(m6_conf $SITE/configs/system-dev.toml)"` | `m6-http /var/www/my-blog /etc/m6/my-blog.toml` |
 | `[server] bind` | `127.0.0.1:8443` | `0.0.0.0:443` |
-| TLS cert | `/tmp/m6/dev/dev.pem` | `/run/credentials/m6-http.service/tls-cert.pem` |
+| TLS cert | `@M6_DEV_HOME@/dev/dev.pem` | `/run/credentials/m6-http.service/tls-cert.pem` |
 | SMTP | `localhost:1025` (mock) | `smtp.postmarkapp.com:587` |
 | SMTP credentials | inline in renderer config | `/etc/m6/contact-secrets.toml` via `secrets_file` |
 | `[auth] backend` | `m6-auth-check` | `m6-auth-check` |
-| publisher token (`[genid] token_file` in the renderer config) | `/tmp/m6/07-dev-to-production/genid-write.token` | `/run/credentials/render-cms.service/genid-write.token` |
+| publisher token (`[genid] token_file` in the renderer config) | `@M6_DEV_HOME@/07-dev-to-production/genid-write.token` | `/run/credentials/render-cms.service/genid-write.token` |
 | System config | `configs/system-dev.toml` (in repo) | `/etc/m6/my-blog.toml` (on server) |
 | Process manager | `dev.sh` | systemd |
 | Logs | terminal stdout | journald |

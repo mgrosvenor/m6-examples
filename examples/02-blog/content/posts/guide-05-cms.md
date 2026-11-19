@@ -177,8 +177,8 @@ require = "group:editors"
 ```toml
 [server]
 bind     = "127.0.0.1:8443"
-tls_cert = "/tmp/m6/dev/dev.pem"
-tls_key  = "/tmp/m6/dev/dev-key.pem"
+tls_cert = "@M6_DEV_HOME@/dev/dev.pem"
+tls_key  = "@M6_DEV_HOME@/dev/dev-key.pem"
 
 [auth]
 backend = "m6-auth-check"
@@ -283,8 +283,8 @@ cache = "no-store"
 [genid]
 url        = "https://localhost:8443/genid"
 connect    = "127.0.0.1:8443"
-token_file = "/tmp/m6/05-cms/genid-write.token"
-ca_file    = "/tmp/m6/dev/ca.pem"
+token_file = "@M6_DEV_HOME@/05-cms/genid-write.token"
+ca_file    = "@M6_DEV_HOME@/dev/ca.pem"
 timeout_ms = 10000
 ```
 
@@ -361,10 +361,10 @@ trap 'kill $(jobs -p) 2>/dev/null' EXIT
 # keys, auth database and the publisher token (examples/dev-token.sh)
 m6-html        "$SITE" "$SITE/configs/m6-html.conf" &
 m6-file        "$SITE" "$SITE/configs/m6-file.conf" &
-m6-auth-server "$SITE" "$SITE/configs/m6-auth.conf" &   # login and check sockets
-"$EXAMPLES/target/release/render-cms" "$SITE" "$SITE/configs/render-cms.conf" &
+m6-auth-server "$SITE" "$(m6_conf "$SITE/configs/m6-auth.conf")" &   # login and check sockets
+"$EXAMPLES/target/release/render-cms" "$SITE" "$(m6_conf "$SITE/configs/render-cms.conf")" &
 # the source node writes its generation ID under STATE_DIRECTORY
-STATE_DIRECTORY=/tmp/m6/05-cms/state m6-http "$SITE" "$SITE/configs/system-dev.toml" &
+STATE_DIRECTORY="$M6_DEV_HOME/05-cms/state" m6-http "$SITE" "$(m6_conf "$SITE/configs/system-dev.toml")" &
 
 echo "Running at https://localhost:8443"
 echo "CMS at    https://localhost:8443/cms"
