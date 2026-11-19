@@ -94,7 +94,9 @@ fn json_to_toml_value(v: &Value) -> Result<toml::Value, String> {
     }
 }
 
-/// Touch site.toml to trigger m6-http config reload.
+/// Bump site.toml's modification time without changing its content. m6 reads
+/// site.toml once, at start, and no longer watches it, so this reloads nothing
+/// by itself: a restart or `POST /genid` applies the file.
 pub fn config_touch(site_toml: &Path) -> Result<(), String> {
     // Set mtime to 1 second ahead of the current mtime to guarantee the
     // watcher always sees a change, regardless of filesystem time resolution.

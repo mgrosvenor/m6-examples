@@ -381,7 +381,7 @@
   </div>
   <p style="font-size:.75rem;color:var(--muted);margin-bottom:.75rem">
     Edit site.toml settings below. <strong>Save &amp; apply</strong> writes back atomically.
-    <strong>Touch</strong> bumps the mtime so m6-http hot-reloads without changing content.
+    <strong>Touch</strong> bumps the mtime without changing content. m6-http reads site.toml at start, so a restart or <code>POST /genid</code> applies it.
   </p>
   <!-- skeleton / config form -->
   <div id="cfg-wrap">
@@ -1340,7 +1340,6 @@ function renderConfigForm(cfg) {
   if (cfg.log) {
     parts.push(`<div class="cfg-section"><h3>Logging</h3><div class="cfg-fields">
       ${cfgSelect('Level',  'log.level',  cfg.log.level,        ['trace','debug','info','warn','error'])}
-      ${cfgSelect('Format', 'log.format', cfg.log.format ?? 'text', ['text','json'])}
     </div></div>`);
   }
 

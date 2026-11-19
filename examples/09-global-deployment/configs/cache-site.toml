@@ -18,7 +18,6 @@ mode = "internal"
 
 [log]
 level  = "info"
-format = "text"
 
 # ── Backend — Sydney origin over WireGuard H2C ────────────────────────────────
 

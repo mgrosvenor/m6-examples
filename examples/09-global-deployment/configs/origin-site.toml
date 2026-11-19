@@ -7,7 +7,6 @@ mode = "internal"
 
 [log]
 level  = "info"
-format = "text"
 
 # ── Backends — Unix sockets shared with the H2C instance ──────────────────────
 

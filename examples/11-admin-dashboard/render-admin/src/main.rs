@@ -1,9 +1,15 @@
 use render_admin::{bench, logs, ops, perf, system};
 use bench::JobStore;
-use m6_core::{App, AppContext, Error, Request, Response};
+use m6_core::platform::process::raise_fd_limit;
+use m6_core::prelude::*;
+use m6_core::signal::{Action, Lifecycle};
+use m6_core::site::finish_reload;
+use m6_core::{genid_failed, genid_ok};
 use ops::ServiceConfig;
 use serde_json::{json, Value};
+use std::io;
 use std::path::PathBuf;
+use std::time::Duration;
 
 // ── Global state ──────────────────────────────────────────────────────────────
 
@@ -32,12 +38,10 @@ pub struct Global {
     bench_jobs: JobStore,
 }
 
-// Takes `&AppContext`, not `&Map<String, Value>`. m6-core's `App::with_global`
-// passes the whole context: the service config, the site directory and the
-// config path. `ctx.config` is the same map the old argument was, so the body
-// below is unchanged.
-fn init_global(ctx: &AppContext) -> m6_core::Result<Global> {
-    let cfg = ctx.config;
+// Built once at start from the service's own settings. `Site` carries the parsed
+// configuration, so this reads `site.user_config()` and `site.site_dir()`.
+fn load_state(site: &Site) -> m6_core::Result<Global> {
+    let cfg = site.user_config();
     let get = |key: &str, default: &str| -> String {
         cfg.get(key)
             .and_then(Value::as_str)
@@ -57,7 +61,7 @@ fn init_global(ctx: &AppContext) -> m6_core::Result<Global> {
     };
 
     // Resolve paths relative to the site_dir (first CLI arg) when they are relative.
-    let site_dir = PathBuf::from(std::env::args().nth(1).unwrap_or_default());
+    let site_dir = site.site_dir();
     let resolve = |raw: String| -> PathBuf {
         let p = PathBuf::from(&raw);
         if p.is_absolute() { p } else { site_dir.join(p) }
@@ -233,41 +237,304 @@ fn handle_m6http_alltime(_req: &Request, g: &Global) -> m6_core::Result<Response
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
-fn main() {
-    App::with_global(init_global)
-        // Performance tab: last N "periodic stats" entries from m6-http log
-        .route_get("/api/admin/perf",           handle_perf)
-        // Routes tab: per-route request counts, cache hit rates, avg latency
-        .route_get("/api/admin/routes",         handle_routes)
-        // System tab: CPU, RAM, disk, uptime
-        .route_get("/api/admin/system",          handle_system)
-        // Bench tab: list targets
-        .route_get("/api/admin/bench",           handle_bench_targets)
-        // Bench tab: start a job → { job_id }
-        .route_post("/api/admin/bench",          handle_bench_start)
-        // Bench tab: poll a job by id
-        .route_get("/api/admin/bench/{id}",      handle_bench_poll)
-        // Logs tab: last N log lines
-        .route_get("/api/admin/logs",            handle_logs)
-        // Config: read site.toml
-        .route_get("/api/admin/config",          handle_config_read)
-        // Config: write site.toml (validates TOML first)
-        .route_put("/api/admin/config",          handle_config_write)
-        // Config: touch site.toml → triggers m6-http hot reload
-        .route_post("/api/admin/config/touch",   handle_config_touch)
-        // Cache flush: alias for touch
-        .route_post("/api/admin/cache/flush",    handle_config_touch)
-        // Services: restart by name via SIGTERM
-        .route_post("/api/admin/services/{name}/restart", handle_restart)
-        // Backends: topology summary + per-backend sample/alltime detail
-        .route_get("/api/admin/backends",                    handle_backends_summary)
-        .route_get("/api/admin/backends/{name}/sample",      handle_backend_sample)
-        .route_get("/api/admin/backends/{name}/alltime",     handle_backend_alltime)
-        .route_get("/api/admin/m6http/sample",               handle_m6http_sample)
-        .route_get("/api/admin/m6http/alltime",              handle_m6http_alltime)
-        .run()
-        .unwrap_or_else(|e| {
-            eprintln!("render-admin error: {e}");
-            std::process::exit(1);
-        });
+/// The name the service passes to `Site::load`: the configuration file's stem, the
+/// socket's name and the `[[backend]]` name in site.toml.
+const NAME: &str = "render-admin";
+
+/// The code routes, in the order `route` below matches them.
+const ROUTES: &[CodeRoute] = &[
+    // Performance tab: last N "periodic stats" entries from the m6-http log
+    CodeRoute { pattern: "/api/admin/perf",                       method: RouteMethod::Get },
+    // Routes tab: per-route request counts, cache hit rates, average latency
+    CodeRoute { pattern: "/api/admin/routes",                     method: RouteMethod::Get },
+    // System tab: CPU, RAM, disk, uptime
+    CodeRoute { pattern: "/api/admin/system",                     method: RouteMethod::Get },
+    // Bench tab: list targets
+    CodeRoute { pattern: "/api/admin/bench",                      method: RouteMethod::Get },
+    // Bench tab: start a job, answers { job_id }
+    CodeRoute { pattern: "/api/admin/bench",                      method: RouteMethod::Post },
+    // Bench tab: poll a job by id
+    CodeRoute { pattern: "/api/admin/bench/{id}",                 method: RouteMethod::Get },
+    // Logs tab: last N log lines
+    CodeRoute { pattern: "/api/admin/logs",                       method: RouteMethod::Get },
+    // Config: read site.toml
+    CodeRoute { pattern: "/api/admin/config",                     method: RouteMethod::Get },
+    // Config: write site.toml (validates the TOML first)
+    CodeRoute { pattern: "/api/admin/config",                     method: RouteMethod::Put },
+    // Config: touch site.toml (the file only: m6-http reads it at start)
+    CodeRoute { pattern: "/api/admin/config/touch",               method: RouteMethod::Post },
+    // Cache flush: an alias for touch
+    CodeRoute { pattern: "/api/admin/cache/flush",                method: RouteMethod::Post },
+    // Services: restart by name with SIGTERM
+    CodeRoute { pattern: "/api/admin/services/{name}/restart",    method: RouteMethod::Post },
+    // Backends: topology summary, then per-backend sample and all-time detail
+    CodeRoute { pattern: "/api/admin/backends",                   method: RouteMethod::Get },
+    CodeRoute { pattern: "/api/admin/backends/{name}/sample",     method: RouteMethod::Get },
+    CodeRoute { pattern: "/api/admin/backends/{name}/alltime",    method: RouteMethod::Get },
+    CodeRoute { pattern: "/api/admin/m6http/sample",              method: RouteMethod::Get },
+    CodeRoute { pattern: "/api/admin/m6http/alltime",             method: RouteMethod::Get },
+];
+
+// ── the service's own event loop ─────────────────────────────────────────────
+//
+// m6-core supplies the parts (the reactor, the signal descriptor, the
+// connection slots, the read deadlines, routing, the shutdown lines). The
+// service writes the loop that ties them together, so nothing here is hidden
+// in a framework. docs/m6-app-anatomy.md in m6 walks through it step by step.
+//
+// start: blocking and allocation are fine. run: nothing blocks. stop: blocking
+// is fine again.
+
+const LISTENER: Token = Token(usize::MAX);
+const SIGNALS: Token = Token(usize::MAX - 1);
+/// The log's stdout, registered only while it holds bytes a full pipe refused.
+const LOG: Token = Token(usize::MAX - 2);
+/// The longest the loop waits when nothing happens, and the log's flush tick.
+const TICK: Duration = Duration::from_secs(1);
+
+fn main() -> io::Result<()> {
+    // Block the termination signals before anything can start a thread.
+    m6_core::signal::block();
+
+    // ── start ────────────────────────────────────────────────────────────
+    let mut site = Site::load(NAME, ROUTES, &[], &TeraFactory);
+    // State is a plain value in `main`: one thread owns it, so it needs no lock.
+    // A start that cannot build it prints why and exits 2.
+    let state = load_state(&site).unwrap_or_else(|e| fail("loading the configuration", e));
+    let read_timeout = site.read_timeout();
+    let ceiling = raise_fd_limit().unwrap_or_else(|e| fail("raising the open file limit", e));
+    let table = site.limits().get(&m6_core::limits::CONNECTIONS);
+    let ceiling = ceiling.min(table.max());
+    let initial = table.start().min(ceiling);
+
+    let mut poll = Poll::new().unwrap_or_else(|e| fail("creating the poll", e));
+    // The signal descriptor opens before the socket does: the socket is how a
+    // caller knows the service is ready, and a stop sent right after must find
+    // the handler armed.
+    let mut signals = Signals::new().unwrap_or_else(|e| fail("opening the signal descriptor", e));
+    let mut listener = listen_unix(site.socket_path(), site.socket_mode())
+        .unwrap_or_else(|e| fail(&format!("binding {}", site.socket_path().display()), e));
+    poll.registry()
+        .register(&mut listener, LISTENER, Interest::READABLE)?;
+    poll.registry()
+        .register_fd(signals.raw_fd(), SIGNALS, Interest::READABLE)?;
+
+    let mut lifecycle = Lifecycle::new(site.name(), Some(site.socket_path().to_path_buf()));
+    lifecycle.started();
+
+    // The connection table and its buffers follow the `[limits]` keys.
+    let read_limit = site.limits().get(&m6_core::limits::REQUEST_BODY).clone();
+    let write_limit = site.limits().get(&m6_core::limits::RESPONSE_BUFFER).clone();
+    let mut conns = Slots::new(initial, ceiling, move || {
+        ServerConn::with_limits(&read_limit, &write_limit)
+    });
+    // `read_timeout_s = 0` means no deadline, which is the zero duration.
+    let mut deadlines = Timeouts::new(initial, read_timeout.unwrap_or(Duration::ZERO));
+    let mut events = Events::with_capacity(256);
+    let mut accepting = true;
+    let mut last_tick = m6_core::platform::now();
+
+    // ── run ──────────────────────────────────────────────────────────────
+    'run: loop {
+        // An interrupted wait is not an error: wait again.
+        match poll.poll(
+            &mut events,
+            Some(deadlines.timeout(m6_core::platform::now(), TICK)),
+        ) {
+            Ok(()) => {}
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+            Err(e) => return Err(e),
+        }
+        let now = m6_core::platform::now();
+        for ev in &events {
+            match ev.token() {
+                // New connections: a free slot for each, registered, with a
+                // read deadline.
+                LISTENER => {
+                    while let Some(taken) = conns.take() {
+                        if let Some(new_len) = taken.grew_to {
+                            deadlines.grow(new_len);
+                        }
+                        let mut stream = match listener.accept() {
+                            Ok((stream, _)) => stream,
+                            Err(e) => {
+                                conns.free(taken.key);
+                                match m6_core::platform::net::accept_error(&e) {
+                                    m6_core::platform::net::Accept::Drained => break,
+                                    m6_core::platform::net::Accept::SkipOne => continue,
+                                    m6_core::platform::net::Accept::Stop => {
+                                        eprintln!("{NAME}: accept error: {e}");
+                                        break;
+                                    }
+                                }
+                            }
+                        };
+                        poll.registry().register(
+                            &mut stream,
+                            Token(taken.key),
+                            Interest::READABLE,
+                        )?;
+                        if read_timeout.is_some() {
+                            deadlines.touch(Token(taken.key), now);
+                        }
+                        conns.get_mut(taken.key).attach(stream);
+                    }
+                    // At the ceiling, stop accepting: new clients wait in the
+                    // kernel's backlog.
+                    if conns.is_full() {
+                        poll.registry().deregister(&mut listener)?;
+                        accepting = false;
+                    }
+                }
+                SIGNALS => {
+                    let mut stop = false;
+                    while let Some(signal) = signals.read() {
+                        if lifecycle.on_signal(signal) == Action::Stop {
+                            stop = true;
+                        }
+                    }
+                    if stop {
+                        break 'run;
+                    }
+                }
+                LOG => m6_core::log::flush(),
+                // One connection's turn, then wait for what it still needs,
+                // push its deadline back, or close it.
+                Token(k) => {
+                    let conn = conns.get_mut(k);
+                    let was = conn.interest();
+                    match turn(conn, &mut site, &state) {
+                        Ok(true) => {
+                            if conn.interest() != was {
+                                let interest = conn.interest();
+                                let stream = conn
+                                    .stream()
+                                    .expect("every registered token has an attached connection");
+                                poll.registry().reregister(stream, Token(k), interest)?;
+                            }
+                            if read_timeout.is_some() {
+                                deadlines.touch(Token(k), now);
+                            }
+                        }
+                        _ => m6_core::h1::close_conn(&poll, &mut conns, &mut deadlines, k)?,
+                    }
+                }
+            }
+        }
+
+        // A full stdout holds its bytes. Watch it for writability only while
+        // it does, so the loop never waits on the log.
+        if let Err(e) = m6_core::log::watch(poll.registry(), LOG) {
+            m6_core::log::error!(error = %e, "log descriptor registration failed");
+        }
+        // A client that sent nothing before its deadline is closed unanswered.
+        while let Some(Token(k)) = deadlines.expired(m6_core::platform::now()) {
+            m6_core::h1::close_conn(&poll, &mut conns, &mut deadlines, k)?;
+        }
+        // A slot came free while the table was full: accept again.
+        if !accepting && !conns.is_full() {
+            poll.registry()
+                .register(&mut listener, LISTENER, Interest::READABLE)?;
+            accepting = true;
+        }
+        if m6_core::platform::now() - last_tick >= TICK {
+            m6_core::log::tick(m6_core::platform::wall());
+            last_tick = m6_core::platform::now();
+        }
+    }
+
+    // ── stop ─────────────────────────────────────────────────────────────
+    // Connections still open are dropped: a stop does not wait for a request
+    // in flight. `complete` removes the socket and logs the line.
+    lifecycle.complete();
+    m6_core::log::stop()?;
+    Ok(())
+}
+
+/// One connection's turn: write what it owes, read, dispatch, write, and
+/// report whether the connection stays open.
+fn turn(conn: &mut ServerConn, site: &mut Site, state: &Global) -> io::Result<bool> {
+    loop {
+        // Write what is owed before reading anything.
+        if conn.interest() == Interest::WRITABLE {
+            match conn.flush()? {
+                Flush::Done => {}
+                Flush::More => return Ok(true),
+                Flush::Close => return Ok(false),
+            }
+        }
+        let mut heads = head_slots();
+        let (response, idle) = match conn.read(&mut heads)? {
+            Read::Request(head) => {
+                let response = match site.handle(&head) {
+                    // A page, a 404 or an error, already finished.
+                    Handled::Done(response) => response,
+                    // One of ROUTES: run its handler, then `finish` adds the
+                    // site-wide parts (templates, Cache-Control, CSRF, flash).
+                    Handled::Code(index, req) => {
+                        let response = route(index, &req, state)
+                            .unwrap_or_else(|e| m6_core::response::error_to_response(&e));
+                        site.finish(&req, response)
+                    }
+                    // `POST /genid`: read config, templates and params again
+                    // through the start path, and keep the old site if that
+                    // fails.
+                    Handled::Reload(reload) => {
+                        let response = match site.reload(ROUTES, &[], &TeraFactory) {
+                            Ok(next) => {
+                                *site = next;
+                                genid_ok()
+                            }
+                            Err(e) => genid_failed(&e),
+                        };
+                        finish_reload(&reload, response)
+                    }
+                    Handled::Named(..) => unreachable!("{NAME} registers no named handlers"),
+                };
+                (Some(response), false)
+            }
+            Read::More => (None, true),
+            Read::Closed => return Ok(false),
+        };
+        if let Some(response) = response {
+            conn.respond_response(response);
+        }
+        match conn.flush()? {
+            // Answered and kept alive: a pipelined request may already be
+            // buffered, so read again before waiting.
+            Flush::Done if !idle => {}
+            Flush::Done | Flush::More => return Ok(true),
+            Flush::Close => return Ok(false),
+        }
+    }
+}
+
+/// A failure at start is printed and exits 2, the code for a bad start.
+fn fail(what: &str, error: impl std::fmt::Display) -> ! {
+    eprintln!("{NAME}: {what}: {error}");
+    std::process::exit(2)
+}
+
+/// The handler for one route: the arm's number is the route's place in `ROUTES`.
+fn route(index: usize, req: &Request, g: &Global) -> m6_core::Result<Response> {
+    match index {
+        0 => handle_perf(req, g),
+        1 => handle_routes(req, g),
+        2 => handle_system(req, g),
+        3 => handle_bench_targets(req, g),
+        4 => handle_bench_start(req, g),
+        5 => handle_bench_poll(req, g),
+        6 => handle_logs(req, g),
+        7 => handle_config_read(req, g),
+        8 => handle_config_write(req, g),
+        9 => handle_config_touch(req, g),
+        10 => handle_config_touch(req, g),
+        11 => handle_restart(req, g),
+        12 => handle_backends_summary(req, g),
+        13 => handle_backend_sample(req, g),
+        14 => handle_backend_alltime(req, g),
+        15 => handle_m6http_sample(req, g),
+        16 => handle_m6http_alltime(req, g),
+        _ => unreachable!("route {index} is not in ROUTES"),
+    }
 }

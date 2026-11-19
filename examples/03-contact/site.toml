@@ -8,7 +8,6 @@ verbose_fallback = true
 
 [log]
 level  = "info"
-format = "text"
 
 [[backend]]
 name    = "m6-html"

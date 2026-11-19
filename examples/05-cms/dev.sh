@@ -146,16 +146,10 @@ M6_SOCKET_OVERRIDE=/tmp/m6/render-cms.sock \
     "$EXAMPLES/target/release/render-cms" "$SITE" "$SITE/configs/render-cms.conf" >> "$SITE/logs/render-cms.log" 2>&1 &
 CMS_PID=$!
 
-if command -v m6-md &>/dev/null; then
-    info "Starting m6-md (watch mode)..."
-    m6-md "$SITE/content/posts/" --output "$SITE/data/posts.json" \
-        --watch --touch "$SITE/site.toml" >> "$SITE/logs/m6-md.log" 2>&1 &
-    MD_PID=$!
-else
-    MD_PID=""
-fi
+# m6-md ran once above. It has no watch mode: run it again after editing a post,
+# then restart m6-html so it reads the new data/posts.json.
 
-trap 'echo ""; info "Stopping..."; kill $HTML_PID $FILE_PID $AUTH_PID $CMS_PID ${MD_PID:-} $HTTP_PID 2>/dev/null; wait 2>/dev/null' EXIT
+trap 'echo ""; info "Stopping..."; kill $HTML_PID $FILE_PID $AUTH_PID $CMS_PID $HTTP_PID 2>/dev/null; wait 2>/dev/null' EXIT
 
 # Wait for backend sockets
 echo -n "Waiting for backend sockets"
@@ -206,7 +200,6 @@ echo "          $SITE/logs/m6-html.log"
 echo "          $SITE/logs/m6-file.log"
 echo "          $SITE/logs/m6-auth.log"
 echo "          $SITE/logs/render-cms.log"
-[ -n "${MD_PID:-}" ] && echo "          $SITE/logs/m6-md.log"
 echo ""
 
 wait

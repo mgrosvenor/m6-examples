@@ -22,7 +22,6 @@ verbose_fallback = true
 
 [log]
 level  = "debug"
-format = "json"
 
 [[backend]]
 name    = "render-admin"

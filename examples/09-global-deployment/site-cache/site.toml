@@ -17,7 +17,6 @@ mode = "internal"
 
 [log]
 level  = "info"
-format = "text"
 
 # ── Backend — origin H2C (local dev) ──────────────────────────────────────────
 
