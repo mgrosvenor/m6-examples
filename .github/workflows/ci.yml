@@ -185,7 +185,7 @@ jobs:
           for d in examples/*/; do
             name=$(basename "$d")
             case "$name" in
-              data) continue ;;
+              data|common) continue ;;
               06-systemd) echo "  $name  not parsed: systemd units only, no site config"; continue ;;
               09-global-deployment) echo "  $name  not parsed: per-node configs, no single system-dev.toml; its integration test covers it"; continue ;;
             esac

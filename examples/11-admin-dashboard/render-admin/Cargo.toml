@@ -13,13 +13,12 @@ path = "src/main.rs"
 
 [dependencies]
 m6-core     = { path = "../../../../m6/m6-core" }
-rustls-pemfile = "2"
+genid-publisher = { path = "../../common/genid-publisher" }
 sysinfo     = "0.31"
 serde_json  = "1"
 toml        = "0.8"
 anyhow      = "1"
 uuid        = { version = "1", features = ["v4"] }
-
 
 [dev-dependencies]
 tempfile = "3"

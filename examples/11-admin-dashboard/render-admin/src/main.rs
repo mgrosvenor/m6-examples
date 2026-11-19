@@ -16,6 +16,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use bench::JobStore;
+use genid_publisher::Publisher;
 use m6_core::client::Upstream;
 use m6_core::platform::process::raise_fd_limit;
 use m6_core::platform::ChildExit;
@@ -24,7 +25,6 @@ use m6_core::signal::{Action, Lifecycle};
 use m6_core::site::finish_reload;
 use m6_core::{genid_failed, genid_ok};
 use ops::ServiceConfig;
-use render_admin::genid::Publisher;
 use render_admin::{bench, logs, ops, perf, system};
 use serde_json::{json, Value};
 
@@ -819,7 +819,7 @@ fn publish_event(
                 .held
                 .take()
                 .expect("a publish in flight holds its answer");
-            let answer = match render_admin::genid::outcome(&conn.up) {
+            let answer = match genid_publisher::outcome(&conn.up) {
                 Ok(()) => held,
                 Err(cause) => not_published(&cause),
             };

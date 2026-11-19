@@ -1,5 +1,4 @@
 pub mod bench;
-pub mod genid;
 pub mod logs;
 pub mod ops;
 pub mod perf;

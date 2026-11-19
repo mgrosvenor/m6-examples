@@ -9,8 +9,7 @@ use std::fs;
 use std::io;
 use std::time::{Duration, Instant};
 
-mod genid;
-use genid::Publisher;
+use genid_publisher::Publisher;
 
 /// The name the service passes to `Site::load`. It is also the configuration file's
 /// stem, the socket's name and the `[[backend]]` name in site.toml.
@@ -428,7 +427,7 @@ fn publish_event(
                 .held
                 .take()
                 .expect("a publish in flight holds its answer");
-            let answer = match genid::outcome(&conn.up) {
+            let answer = match genid_publisher::outcome(&conn.up) {
                 Ok(()) => held,
                 Err(cause) => not_published(&cause),
             };
